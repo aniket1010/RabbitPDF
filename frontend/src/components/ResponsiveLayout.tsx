@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ResizableLayout from './ResizableLayout';
 import MobileLayout from './MobileLayout';
 import SeamlessDocumentViewer from './SeamlessDocumentViewer';
@@ -16,6 +16,28 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   const [isMobile, setIsMobile] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [pdfTitle, setPdfTitle] = useState<string>('');
+
+  // Simple reference click handler - just pass to SeamlessDocumentViewer
+  const handleReferenceClick = useCallback((pageNumber: number, textToHighlight: string) => {
+    console.log('📄 Reference clicked - Page:', pageNumber, 'Text:', textToHighlight);
+    
+    // Validate pageNumber
+    if (!pageNumber || isNaN(pageNumber) || pageNumber < 1) {
+      console.error('❌ Invalid pageNumber:', pageNumber);
+      return;
+    }
+    
+    // Store the reference click data to pass to SeamlessDocumentViewer
+    setReferenceClick({ pageNumber, textToHighlight });
+  }, []);
+
+  // State to pass reference clicks to SeamlessDocumentViewer
+  const [referenceClick, setReferenceClick] = useState<{pageNumber: number, textToHighlight: string} | null>(null);
+
+  // Callback to clear reference click after processing
+  const handleReferenceProcessed = useCallback(() => {
+    setReferenceClick(null);
+  }, []);
 
   useEffect(() => {
     setIsClient(true);
@@ -93,8 +115,21 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
       }}
     >
       <ResizableLayout
-        leftPanel={<SeamlessDocumentViewer conversationId={conversationId} pdfTitle={stripPdfExtension(pdfTitle)} />}
-        rightPanel={<ChatPanel conversationId={conversationId} pdfTitle={stripPdfExtension(pdfTitle)} />}
+        leftPanel={
+          <SeamlessDocumentViewer 
+            conversationId={conversationId} 
+            pdfTitle={stripPdfExtension(pdfTitle)}
+            referenceClick={referenceClick}
+            onReferenceProcessed={handleReferenceProcessed}
+          />
+        }
+        rightPanel={
+          <ChatPanel 
+            conversationId={conversationId} 
+            pdfTitle={stripPdfExtension(pdfTitle)}
+            onReferenceClick={handleReferenceClick}
+          />
+        }
         initialLeftWidth={55}
         minLeftWidth={25}
         maxLeftWidth={75}

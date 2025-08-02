@@ -18,6 +18,20 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// Add request interceptor to include NextAuth cookies
+api.interceptors.request.use(async (request) => {
+  // In client-side requests, cookies are automatically included with withCredentials: true
+  // The NextAuth JWT token is in the cookies and will be sent to the backend
+  
+  // For server-side requests, we'd need to manually forward cookies
+  if (typeof window === 'undefined') {
+    // Server-side - would need to get cookies from request headers
+    // For now, we'll handle this in client-side only
+  }
+  
+  return request;
+});
+
 // Add request interceptor to log requests
 api.interceptors.request.use(request => {
   console.log('API Request:', {

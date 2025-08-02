@@ -1,12 +1,13 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const { validatePDF } = require('./middleware/validation');
 
 const uploadRoutes = require('./routes/upload');
 const chatRoutes = require('./routes/chat');
 const conversationRoutes = require('./routes/conversation');
-
-require('dotenv').config();
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(cors({
   origin: true, // Allow all origins in development
   credentials: true
 }));
+app.use(cookieParser()); // Parse cookies for NextAuth JWT tokens
 app.use(express.json());
 
 

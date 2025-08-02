@@ -2,23 +2,27 @@ const express = require('express');
 const { getEmbedding } = require('../services/embedding');
 const { queryEmbedding } = require('../services/pinecone');
 const { askGpt } = require('../services/gpt');
-const { processMessageContent, cleanTextContent } = require('../services/messageProcessor');
+const { processMessageContent, cleanTextContent, processAndRespondToMessage } = require('../services/messageProcessor');
+const { verifyAuth } = require('../utils/auth');
 const prisma = require('../prismaClient');
 
 const router = express.Router();
 
 // Get messages for a conversation
-router.get('/:conversationId', async (req, res) => {
+router.get('/:conversationId', verifyAuth, async (req, res) => {
   try {
     const { conversationId } = req.params;
 
-    // Check if conversation exists
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId }
+    // Check if conversation exists and belongs to user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
     });
 
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
     }
 
     // Get messages for the conversation
@@ -35,7 +39,9 @@ router.get('/:conversationId', async (req, res) => {
       contentType: message.contentType || 'text',
       isUser: message.role === 'user',
       timestamp: message.createdAt,
-      processedAt: message.processedAt
+      processedAt: message.processedAt,
+      status: message.status,
+      error: message.error || null
     }));
 
     res.json(formattedMessages);
@@ -46,20 +52,23 @@ router.get('/:conversationId', async (req, res) => {
 });
 
 // Post a new message to a conversation
-router.post('/:conversationId', async (req, res) => {
+router.post('/:conversationId', verifyAuth, async (req, res) => {
   try {
     const { question } = req.body;
     const { conversationId } = req.params;
 
     console.log('Received question:', question);
 
-    // Check if conversation exists
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId }
+    // Check if conversation exists and belongs to user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
     });
 
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
     }
 
     // Clean and process user message
@@ -74,20 +83,14 @@ router.post('/:conversationId', async (req, res) => {
         text: cleanedQuestion,
         formattedText: processedUserMessage.formatted,
         contentType: processedUserMessage.contentType,
-        status: 'completed',
-        processedAt: processedUserMessage.processedAt
+        status: conversation.processingStatus === 'completed' ? 'processing' : 'pending',
+        processedAt: processedUserMessage.processedAt,
+        error: null
       }
     });
 
-    // Check if processing is complete
+    // If processing is not complete, return the user message immediately
     if (conversation.processingStatus !== 'completed') {
-      // Queue the message for later processing
-      await prisma.message.update({
-        where: { id: userMessage.id },
-        data: { status: 'pending' }
-      });
-
-      // Return the user message immediately
       return res.json({
         id: userMessage.id,
         text: processedUserMessage.formatted,
@@ -95,93 +98,53 @@ router.post('/:conversationId', async (req, res) => {
         contentType: processedUserMessage.contentType,
         isUser: true,
         timestamp: userMessage.createdAt,
-        processedAt: processedUserMessage.processedAt
+        processedAt: processedUserMessage.processedAt,
+        status: 'pending',
+        error: null
       });
     }
 
-    // Process the message immediately if embeddings are ready
-    const questionEmbedding = await getEmbedding(question);
-    const matches = await queryEmbedding(questionEmbedding, 3, conversationId);
+    // If processing is complete, process the message immediately
+    const assistantMessage = await processAndRespondToMessage(userMessage);
 
-    console.log('Found matches:', matches.length);
-
-    // Extract and format the context from matches
-    const context = matches
-      .map(match => match.metadata?.text || '')
-      .filter(text => text.trim().length > 0)
-      .join('\n\n');
-
-    console.log('Formatted context:', context);
-
-    if (!context) {
-      const errorMessage = "I couldn't find any relevant information in the document to answer your question. Please try asking about something else or rephrase your question.";
-      
-      // Process error message
-      const processedError = await processMessageContent(errorMessage, 'assistant');
-      
-      const assistantMessage = await prisma.message.create({
-        data: { 
-          conversationId, 
-          role: 'assistant', 
-          text: errorMessage,
-          formattedText: processedError.formatted,
-          contentType: processedError.contentType,
-          status: 'completed',
-          processedAt: processedError.processedAt
-        }
-      });
-
+    if (!assistantMessage) {
+      // If there was an error, fetch the updated user message for error info
+      const erroredUserMessage = await prisma.message.findUnique({ where: { id: userMessage.id } });
       return res.json({
-        id: assistantMessage.id,
-        text: processedError.formatted,
-        originalText: errorMessage,
-        contentType: processedError.contentType,
-        isUser: false,
-        timestamp: assistantMessage.createdAt,
-        processedAt: processedError.processedAt
+        id: erroredUserMessage.id,
+        text: erroredUserMessage.formattedText || erroredUserMessage.text,
+        originalText: erroredUserMessage.text,
+        contentType: erroredUserMessage.contentType,
+        isUser: true,
+        timestamp: erroredUserMessage.createdAt,
+        processedAt: erroredUserMessage.processedAt,
+        status: erroredUserMessage.status,
+        error: erroredUserMessage.error
       });
     }
 
-    const answer = await askGpt(question, context);
-
-    // Process the AI response
-    const processedAnswer = await processMessageContent(answer, 'assistant');
-
-    const assistantMessage = await prisma.message.create({
-      data: { 
-        conversationId, 
-        role: 'assistant', 
-        text: answer,
-        formattedText: processedAnswer.formatted,
-        contentType: processedAnswer.contentType,
-        status: 'completed',
-        processedAt: processedAnswer.processedAt
-      }
-    });
-
-    // Return message in frontend format
+    // Return assistant message in frontend format
     res.json({
       id: assistantMessage.id,
-      text: processedAnswer.formatted,
-      originalText: answer,
-      contentType: processedAnswer.contentType,
+      text: assistantMessage.formattedText || assistantMessage.text,
+      originalText: assistantMessage.text,
+      contentType: assistantMessage.contentType,
       isUser: false,
       timestamp: assistantMessage.createdAt,
-      processedAt: processedAnswer.processedAt
+      processedAt: assistantMessage.processedAt,
+      status: assistantMessage.status,
+      error: assistantMessage.error
     });
   } catch (error) {
     console.error('Error in chat route:', error);
-    
     // Create a user-friendly error message
     let errorMessage = "I'm having trouble processing your request right now. Please try again in a moment.";
-    
     if (error.message.includes('PineconeConnectionError') || error.message.includes('Connect Timeout Error')) {
       errorMessage = "I'm having trouble connecting to the document database. Please try again in a few minutes.";
     }
-    
     // Process error message
     const processedError = await processMessageContent(errorMessage, 'assistant');
-    
+    // Save error as assistant message
     const assistantMessage = await prisma.message.create({
       data: { 
         conversationId, 
@@ -189,11 +152,11 @@ router.post('/:conversationId', async (req, res) => {
         text: errorMessage,
         formattedText: processedError.formatted,
         contentType: processedError.contentType,
-        status: 'completed',
-        processedAt: processedError.processedAt
+        status: 'error',
+        processedAt: processedError.processedAt,
+        error: error.message
       }
     });
-
     return res.json({
       id: assistantMessage.id,
       text: processedError.formatted,
@@ -201,8 +164,89 @@ router.post('/:conversationId', async (req, res) => {
       contentType: processedError.contentType,
       isUser: false,
       timestamp: assistantMessage.createdAt,
-      processedAt: processedError.processedAt
+      processedAt: processedError.processedAt,
+      status: 'error',
+      error: error.message
     });
+  }
+});
+
+// Diagnostic endpoint to check reference availability
+router.get('/:conversationId/debug-references', verifyAuth, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { query } = req.query;
+
+    // Check if conversation exists and belongs to user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
+    }
+
+    const { getEmbedding } = require('../services/embedding');
+    const { queryEmbedding } = require('../services/pinecone');
+
+    const debugInfo = {
+      conversationId,
+      processingStatus: conversation.processingStatus,
+      totalChunks: 0,
+      sampleQuery: query || "What is this document about?",
+      matches: [],
+      issues: []
+    };
+
+    // Test with sample query
+    try {
+      console.log(`🔧 [Debug] Testing vector search for conversation ${conversationId}`);
+      const questionEmbedding = await getEmbedding(debugInfo.sampleQuery);
+      const matches = await queryEmbedding(questionEmbedding, 10, conversationId);
+      
+      debugInfo.totalChunks = matches.length;
+      debugInfo.matches = matches.map((match, index) => ({
+        index: index + 1,
+        score: (match.score || 0).toFixed(3),
+        pageNumber: match.metadata?.pageNumber || 'unknown',
+        confidence: (match.metadata?.confidence || 0).toFixed(3),
+        positionType: match.metadata?.positionType || 'unknown',
+        hasText: !!(match.metadata?.text),
+        textPreview: match.metadata?.text ? match.metadata.text.substring(0, 100) + '...' : 'No text'
+      }));
+
+      // Analyze issues
+      if (matches.length === 0) {
+        debugInfo.issues.push('No vector matches found - PDF may not be processed or indexed');
+      }
+
+      const validMatches = matches.filter(m => m.metadata?.text && m.metadata?.pageNumber);
+      if (validMatches.length < matches.length) {
+        debugInfo.issues.push(`${matches.length - validMatches.length} matches missing text or page number`);
+      }
+
+      const lowConfidenceMatches = matches.filter(m => (m.metadata?.confidence || m.score || 0) < 0.4);
+      if (lowConfidenceMatches.length > 0) {
+        debugInfo.issues.push(`${lowConfidenceMatches.length} matches below confidence threshold (0.4)`);
+      }
+
+      const page1Matches = matches.filter(m => m.metadata?.pageNumber === 1);
+      if (page1Matches.length === matches.length && matches.length > 3) {
+        debugInfo.issues.push('All matches point to page 1 - possible page mapping issue');
+      }
+
+    } catch (error) {
+      debugInfo.issues.push(`Vector search failed: ${error.message}`);
+    }
+
+    res.json(debugInfo);
+
+  } catch (error) {
+    console.error('Error in debug references route:', error);
+    res.status(500).json({ error: 'Error debugging references' });
   }
 });
 

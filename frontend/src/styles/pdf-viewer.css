@@ -1,239 +1,84 @@
-/* Hide PDF scrollbars but maintain full functionality */
-.rpv-core__inner-pages {
-  /* Disable internal scrolling to allow parent container to handle it */
-  overflow: visible !important;
-  /* Hide scrollbar but keep scrolling functionality */
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-  height: auto !important;
-  background-color: white !important;
-  /* Enhanced scroll positioning */
-  scroll-padding-top: 20px !important;
-  scroll-margin-top: 20px !important;
-}
-
-.rpv-core__inner-pages::-webkit-scrollbar {
-  display: none !important;
-}
-
-/* Ensure consistent background for PDF viewer */
+/* PDF Viewer specific styles */
 .rpv-core__viewer {
-  background-color: white !important;
-  border: none !important;
-  overflow: visible !important;
-  height: auto !important;
-  /* Hide scrollbar but keep functionality */
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-  /* Enhanced scrolling performance */
-  -webkit-overflow-scrolling: touch !important;
-}
-
-.rpv-core__viewer::-webkit-scrollbar {
-  display: none !important;
+  background-color: #f5f5f5;
 }
 
 .rpv-core__inner-pages {
-  background-color: #F9F4EB !important;
-  padding: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
+  background-color: #ffffff;
 }
 
 .rpv-core__page-layer {
-  background-color: white !important;
-  box-shadow: none !important;
-  margin: 0 auto !important;
-  border: none !important;
-  margin-bottom: 0 !important;
-  margin-top: 0 !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  /* Enhanced scroll positioning for individual pages */
-  scroll-margin-top: 20px !important;
-  scroll-padding-top: 20px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
 }
 
-/* Remove spacing between pages for seamless experience */
-.rpv-core__page-layer + .rpv-core__page-layer {
-  margin-top: 0 !important;
-  border-top: none !important;
+/* Loading state improvements */
+.rpv-core__spinner {
+  border-color: #e5e7eb;
+  border-top-color: #3b82f6;
 }
 
-/* Remove any default padding/margins */
-.rpv-core__inner-page {
-  margin-bottom: 0 !important;
-  box-shadow: none !important;
-  border: none !important;
-  background-color: white !important;
-  overflow: visible !important;
-  pointer-events: auto !important;
+/* Page navigation improvements */
+.rpv-page-navigation__input {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 8px;
 }
 
-/* Ensure pages are flush with each other */
-.rpv-core__inner-pages > div {
-  margin: 0 !important;
-  padding: 0 !important;
+/* Search highlighting styles - subtle and see-through */
+.rpv-search__highlight {
+  background-color: rgba(59, 130, 246, 0.08) !important; /* Very subtle transparent blue */
+  color: inherit !important; /* Keep original text color */
+  border-radius: 2px !important;
+  padding: 1px 2px !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15) !important; /* Very subtle border */
 }
 
-/* Remove any gaps between PDF pages */
-.rpv-core__page-layer canvas {
-  display: block !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  height: auto !important;
+/* Current/active search result highlighting - slightly more visible but still subtle */
+.rpv-search__highlight--current {
+  background-color: rgba(59, 130, 246, 0.12) !important; /* Slightly more visible blue */
+  color: inherit !important; /* Keep original text color */
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25) !important; /* Slightly more visible border */
+  animation: subtle-pulse 1.5s ease-in-out !important;
 }
 
-/* Remove borders and spacing from PDF container */
-.rpv-core__doc {
-  overflow: visible !important;
-  height: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  /* Ensure natural height flow */
-  min-height: auto !important;
-  max-height: none !important;
+/* Subtle pulse animation for current highlight */
+@keyframes subtle-pulse {
+  0%, 100% {
+    background-color: rgba(59, 130, 246, 0.12);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.16);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+  }
 }
 
-/* Ensure no white space around pages */
-.rpv-core__page {
-  margin: 0 !important;
-  padding: 0 !important;
-  border: none !important;
+/* Reference highlighting styles - subtle and see-through */
+.rpv-search__highlight.reference-highlight {
+  background-color: rgba(59, 130, 246, 0.08) !important; /* Very subtle transparent blue */
+  color: inherit !important; /* Keep original text color */
+  border-radius: 2px !important;
+  padding: 1px 2px !important; /* Reduced padding */
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15) !important; /* Very subtle border */
+  animation: subtle-reference-glow 1.5s ease-in-out !important;
 }
 
-/* Perfect seamless integration - remove first page top margin */
-.rpv-core__page-layer:first-child {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
+/* Gentle glow animation for reference highlights */
+@keyframes subtle-reference-glow {
+  0%, 100% {
+    background-color: rgba(59, 130, 246, 0.08);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.12);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+  }
 }
 
-/* Ensure consistent page width - responsive and centered */
-.rpv-core__page-layer,
-.rpv-core__page-layer canvas,
-.rpv-core__page {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: auto !important;
-}
-
-/* Ensure the entire PDF container flows naturally without internal scrolling */
-.rpv-core__container {
-  height: auto !important;
-  min-height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-  /* Allow scroll events to bubble up */
-  pointer-events: auto !important;
-}
-
-/* Remove any fixed heights that could cause scrolling conflicts */
-.rpv-core__viewer-container {
-  position: relative !important;
-  height: auto !important;
-  overflow: visible !important;
-}
-
-/* Ensure toolbar doesn't interfere */
-.rpv-core__toolbar {
-  display: none !important;
-}
-
-/* Make sure page container allows natural flow */
-.rpv-core__page-container {
-  overflow: visible !important;
-  height: auto !important;
-  position: relative !important;
-}
-
-.pdf-nav-input {
-  background: transparent !important;
-  color: white !important;
-  border: none !important;
-  outline: none !important;
-}
-
-.pdf-nav-input::-webkit-outer-spin-button,
-.pdf-nav-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.pdf-nav-input[type=number] {
-  -moz-appearance: textfield;
-}
-
-/* Ensure all PDF elements allow scroll events to bubble up */
-.rpv-core__page-layer,
-.rpv-core__page,
-.rpv-core__inner-page,
-.rpv-core__doc {
-  /* Allow scroll events to pass through to parent */
-  overflow: visible !important;
-  pointer-events: auto !important;
-}
-
-/* Ensure PDF canvas elements don't block scrolling */
-.rpv-core__page-layer canvas {
-  pointer-events: auto !important;
-}
-
-.rpv-core__canvas-layer,
-.rpv-core__text-layer,
-.rpv-core__annotation-layer {
-  overflow: visible !important;
-  pointer-events: auto !important;
-}
-
-/* Aggressively remove all borders from PDF container only */
-.rpv-core__inner-pages * {
-  border: none !important;
-  border-top: none !important;
-  border-bottom: none !important;
-  border-left: none !important;
-  border-right: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-/* Target PDF.js specific elements */
-div[data-page-number],
-div[data-page-number] *,
-.page,
-.page *,
-canvas {
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-/* Remove any background that might create visual separation */
-.rpv-core__inner-pages {
-  background: white !important;
-}
-
-.rpv-core__page-layer {
-  background: white !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-/* Hide PDF page boundaries completely */
-.rpv-core__page-layer::before,
-.rpv-core__page-layer::after,
-.rpv-core__inner-page::before,
-.rpv-core__inner-page::after {
-  display: none !important;
-  content: none !important;
-}
-
-/* Ensure canvas elements touch each other */
-.rpv-core__page-layer canvas {
-  margin: 0 !important;
-  padding: 0 !important;
-  vertical-align: top !important;
-  display: block !important;
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .rpv-core__page-layer {
+    margin-bottom: 8px;
+  }
 } 

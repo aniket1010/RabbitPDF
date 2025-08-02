@@ -110,7 +110,17 @@ async function batchUpsertEmbeddings(vectorDataArray) {
             metadata: {
                 text: item.text,
                 chunkId: item.id,
-                conversationId: item.conversationId
+                conversationId: item.conversationId,
+                pageNumber: item.pageNumber || 1,
+                pagePosition: item.pagePosition || 0,
+                // Enhanced metadata for better reference accuracy
+                positionType: item.positionType || 'fallback',
+                confidence: item.confidence || 0.5,
+                contextBefore: item.contextBefore || '',
+                contextAfter: item.contextAfter || '',
+                chunkIndex: item.chunkIndex || 0,
+                matchStartChar: item.matchStartChar || 0,
+                matchEndChar: item.matchEndChar || (item.text ? item.text.length : 0)
             }
         }));
 

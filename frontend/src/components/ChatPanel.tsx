@@ -8,11 +8,13 @@ import { Send, Bot, User, Sparkles, Menu, FileText } from "lucide-react"
 // You should have these files and functions in your project.
 import { getConversationMessages, sendChatMessage, getConversationSummary } from "@/services/api"
 import HtmlRenderer from "./HtmlRenderer"
+import MessageWithReferences from "./MessageWithReferences"
 import { stripPdfExtension } from "@/lib/utils"
 
 interface Message {
   id: string
   text: string
+  formattedText?: string
   originalText?: string
   contentType?: "text" | "html" | "markdown"
   isUser: boolean
@@ -26,6 +28,7 @@ interface ChatPanelProps {
   pdfTitle?: string
   onToggleSidebar?: () => void
   onViewPDF?: () => void
+  onReferenceClick?: (pageNumber: number, text: string) => void
   showMobileControls?: boolean
 }
 
@@ -34,6 +37,7 @@ export default function ChatPanel({
   pdfTitle,
   onToggleSidebar,
   onViewPDF,
+  onReferenceClick,
   showMobileControls,
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -149,8 +153,10 @@ export default function ChatPanel({
   }, [conversationId])
 
   useEffect(() => {
-    loadMessages()
-  }, [loadMessages])
+    if (conversationId) {
+      loadMessages()
+    }
+  }, [conversationId]) // Only depend on conversationId, not loadMessages
 
   const handleSendMessage = async (messageText?: string) => {
     const text = (messageText || inputMessage).trim()
@@ -375,11 +381,19 @@ export default function ChatPanel({
                         hyphens: "auto",
                       }}
                     >
-                      <HtmlRenderer
-                        content={message.text}
-                        contentType={message.contentType || "text"}
-                        isUserMessage={message.isUser}
-                      />
+                      {message.isUser ? (
+                        <HtmlRenderer
+                          content={message.text}
+                          contentType={message.contentType || "text"}
+                          isUserMessage={message.isUser}
+                        />
+                      ) : (
+                        <MessageWithReferences
+                          content={message.formattedText || message.text}
+                          contentType={message.contentType === "markdown" ? "html" : (message.contentType || "html")}
+                          onReferenceClick={onReferenceClick}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

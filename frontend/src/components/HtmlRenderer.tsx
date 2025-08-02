@@ -37,12 +37,16 @@ export default function HtmlRenderer({
       'a',
       'table', 'thead', 'tbody', 'tr', 'th', 'td',
       'div', 'span',
-      'hr'
+      'hr',
+      'button' // Allow button elements for reference links
     ],
     ALLOWED_ATTR: [
       'href', 'target', 'rel', 'title',
       'class', 'id',
-      'start'
+      'start',
+      'data-page', 'data-position', 'data-ref', // Allow reference data attributes
+      'data-click-handler', // Allow click handler identification
+      'type', 'style' // Allow button type and inline styles
     ],
     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
   });

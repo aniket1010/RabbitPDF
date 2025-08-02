@@ -3,13 +3,18 @@ const prisma = require('../prismaClient');
 const { deleteEmbeddings } = require('../services/pinecone');
 const { generatePDFSummary } = require('../services/pdfSummary');
 const { processSummaryContent } = require('../services/messageProcessor');
+const { verifyAuth, optionalAuth } = require('../utils/auth');
 const fs = require('fs');
 
 const router = express.Router();
 
-router.get('/list', async (req, res) => {
+router.get('/list', verifyAuth, async (req, res) => {
   try {
+    // Only fetch conversations belonging to the authenticated user
     const conversations = await prisma.conversation.findMany({
+      where: {
+        userId: req.userId // ← Only user's conversations!
+      },
       orderBy: { createdAt: 'desc' },
       take: 10
     });
@@ -20,9 +25,22 @@ router.get('/list', async (req, res) => {
   }
 });
 
-router.get('/:conversationId', async (req, res) => {
+router.get('/:conversationId', verifyAuth, async (req, res) => {
   try {
     const { conversationId } = req.params;
+    
+    // First verify the conversation belongs to the user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
+    });
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
+    }
+    
     const messages = await prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'asc' }

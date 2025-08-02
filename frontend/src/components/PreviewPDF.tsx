@@ -49,18 +49,27 @@ interface PreviewPDFProps {
   onPageChange?: (page: number) => void;
   isNavigationAction?: boolean;
   onError?: () => void;
+  onSearchReady?: (searchFunctions: { searchFn: (text: string) => void; clearFn: () => void }) => void;
 }
 
-export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad, onPageChange, isNavigationAction = false, onError }: PreviewPDFProps) {
+export default function PreviewPDF({
+  conversationId,
+  currentPage = 1,
+  onPdfLoad,
+  onPageChange,
+  isNavigationAction = false,
+  onError,
+  onSearchReady
+}: PreviewPDFProps) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('idle');
   const [isClient, setIsClient] = useState(false);
-  
+
   // Debug currentPage changes
   useEffect(() => {
     console.log('PreviewPDF: currentPage changed to:', currentPage);
   }, [currentPage]);
-  
+
   // Use a ref for the onPdfLoad prop to prevent useEffect re-runs
   const onPdfLoadRef = useRef(onPdfLoad);
   useEffect(() => {
@@ -82,6 +91,7 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
     const loadPdf = async () => {
       setViewState('loading');
       setPdfUrl(null);
+
       try {
         let url;
         if (globalPDFCache.has(conversationId)) {
@@ -91,6 +101,7 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
           url = URL.createObjectURL(res.data);
           globalPDFCache.set(conversationId, url);
         }
+
         setPdfUrl(url);
         setViewState('rendering');
       } catch (err) {
@@ -121,12 +132,12 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
   const handleDocumentLoadSuccess = useCallback((e: { doc: { numPages: number } }) => {
     console.log('PreviewPDF: Document load success:', e);
     const totalPdfPages = e.doc.numPages;
-    
+
     // Call the parent component's callback
     if (onPdfLoadRef.current) {
       onPdfLoadRef.current(totalPdfPages);
     }
-    
+
     // Hide the loading overlay
     setViewState('idle');
   }, []);
@@ -149,7 +160,7 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
         console.log('PreviewPDF: Forcing overlay to hide after timeout');
         setViewState('idle');
       }, 5000); // Hide overlay after 5 seconds if still rendering
-      
+
       return () => clearTimeout(timeout);
     }
   }, [viewState]);
@@ -159,6 +170,7 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
   return (
     <div className="relative h-full w-full" style={{ minHeight: '600px' }}>
       <TransitionOverlay state={viewState} visible={isOverlayVisible} />
+
       <div className="flex h-full w-full justify-center">
         {isClient && pdfUrl && (
           <div className="w-full" style={{ minHeight: '600px' }}>
@@ -168,6 +180,7 @@ export default function PreviewPDF({ conversationId, currentPage = 1, onPdfLoad,
               onPageChange={handlePageChange}
               onDocumentLoadSuccess={handleDocumentLoadSuccess}
               isNavigationAction={isNavigationAction}
+              onSearchReady={onSearchReady}
             />
           </div>
         )}

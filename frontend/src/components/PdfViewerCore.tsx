@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-
-// 1. Import components and hooks directly
 import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
-
-// 2. Import the required CSS
+import { pageNavigationPlugin } from '@react-pdf-viewer/page-navigation';
+import { searchPlugin } from '@react-pdf-viewer/search';
 import '@react-pdf-viewer/core/lib/styles/index.css';
+import '@react-pdf-viewer/page-navigation/lib/styles/index.css';
+import '@react-pdf-viewer/search/lib/styles/index.css';
 
 interface PdfViewerCoreProps {
   pdfUrl: string;
@@ -14,7 +14,14 @@ interface PdfViewerCoreProps {
   onPageChange: (e: { currentPage: number }) => void;
   onDocumentLoadSuccess?: (e: any) => void;
   isNavigationAction?: boolean;
+  onSearchReady?: (searchFunctions: { searchFn: (text: string, targetPage?: number) => void; clearFn: () => void }) => void;
 }
+
+// Helper function to escape special characters for use in a regular expression
+const escapeRegExp = (string: string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+};
+
 
 const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
   pdfUrl,
@@ -22,362 +29,150 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
   onPageChange,
   onDocumentLoadSuccess,
   isNavigationAction = false,
+  onSearchReady,
 }) => {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const [totalPages, setTotalPages] = React.useState(0);
-  const [pageHeights, setPageHeights] = React.useState<number[]>([]);
-  const lastScrollPositionRef = React.useRef<number>(0);
-  const preserveScrollRef = React.useRef<boolean>(false);
-  const lastContainerWidthRef = React.useRef<number>(0);
-  
-  // Debug document load
-  const handleDocumentLoad = (e: any) => {
-    console.log('PdfViewerCore: Document load event triggered:', e);
-    if (e.doc && e.doc.numPages) {
-      setTotalPages(e.doc.numPages);
-      console.log('PdfViewerCore: Total pages:', e.doc.numPages);
-      
-      // Calculate page heights after multiple delays to ensure PDF is fully rendered
-      setTimeout(() => {
-        calculatePageHeights();
-      }, 1000);
-      setTimeout(() => {
-        calculatePageHeights();
-      }, 3000);
-      setTimeout(() => {
-        calculatePageHeights();
-      }, 5000);
+  // Create page navigation plugin
+  const pageNavigationPluginInstance = pageNavigationPlugin();
+  const { jumpToPage } = pageNavigationPluginInstance;
+
+  // Create search plugin with configuration to disable auto-jumping
+  const searchPluginInstance = searchPlugin({
+    // Disable automatic jumping to first match
+    onHighlightKeyword: () => {
+      // Do nothing - this prevents auto-jumping
     }
+  });
+  const { highlight, clearHighlights } = searchPluginInstance;
+
+  // Handle document load
+  const handleDocumentLoad = React.useCallback((e: any) => {
+    console.log('📄 PDF loaded with', e.doc.numPages, 'pages');
     if (onDocumentLoadSuccess) {
       onDocumentLoadSuccess(e);
     }
-  };
+    
+    // Expose search functions to parent component
+    if (onSearchReady) {
+      console.log('📄 Exposing search functions to parent component');
+      onSearchReady({
+        searchFn: (text: string, targetPage?: number) => {
+          console.log('📄 Search function called with text:', text, 'targetPage:', targetPage);
 
-
-
-  // Calculate the height of each page
-  const calculatePageHeights = () => {
-    if (!containerRef.current || preserveScrollRef.current) return;
-    
-    const container = containerRef.current;
-    
-    // Try multiple selectors to find page elements
-    let pageElements = container.querySelectorAll('[data-testid="core__page-layer"]');
-    if (pageElements.length === 0) {
-      pageElements = container.querySelectorAll('[class*="page-layer"]');
-    }
-    if (pageElements.length === 0) {
-      pageElements = container.querySelectorAll('[class*="page"]');
-    }
-    if (pageElements.length === 0) {
-      // Try finding any div that might be a page
-      pageElements = container.querySelectorAll('div[style*="height"]');
-    }
-    
-    console.log('PdfViewerCore: Found', pageElements.length, 'page elements');
-    console.log('PdfViewerCore: Page elements:', Array.from(pageElements).map(el => el.className));
-    
-    if (pageElements.length === 0) {
-      console.log('PdfViewerCore: No page elements found, retrying in 1 second...');
-      setTimeout(calculatePageHeights, 1000);
-      return;
-    }
-    
-    const heights: number[] = [];
-    
-    pageElements.forEach((pageElement, index) => {
-      const rect = pageElement.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const relativeTop = rect.top - containerRect.top + container.scrollTop;
-      const height = rect.height;
-      
-      // Ensure first page starts at 0
-      const adjustedTop = index === 0 ? 0 : relativeTop;
-      heights.push(adjustedTop);
-      console.log(`PdfViewerCore: Page ${index + 1} starts at relative position ${adjustedTop}, height: ${height}`);
-    });
-    
-    setPageHeights(heights);
-    console.log('PdfViewerCore: Page heights calculated:', heights);
-    
-    // Trigger initial page detection after heights are calculated
-    setTimeout(() => detectCurrentPage(), 200);
-  };
-
-  // Scroll to specific page
-  const scrollToPage = React.useCallback((pageNumber: number) => {
-    console.log('PdfViewerCore: Attempting to scroll to page:', pageNumber);
-    
-    if (pageHeights.length === 0) {
-      console.log('PdfViewerCore: Page heights not calculated yet, retrying...');
-      // Retry after a short delay
-      setTimeout(() => scrollToPage(pageNumber), 500);
-      return;
-    }
-    
-    if (pageNumber < 1 || pageNumber > pageHeights.length) {
-      console.log('PdfViewerCore: Invalid page number:', pageNumber, 'available pages:', pageHeights.length);
-      return;
-    }
-    
-    const targetHeight = pageHeights[pageNumber - 1];
-    console.log('PdfViewerCore: Scrolling to height:', targetHeight, 'for page:', pageNumber);
-    
-    if (containerRef.current) {
-      containerRef.current.scrollTo({
-        top: targetHeight,
-        behavior: 'auto'
-      });
-      
-      // Verify the scroll worked
-      setTimeout(() => {
-        const currentScrollTop = containerRef.current?.scrollTop || 0;
-        console.log('PdfViewerCore: Current scroll position:', currentScrollTop, 'target was:', targetHeight);
-      }, 100);
-    }
-  }, [pageHeights]);
-
-  // Manual page detection based on scroll position
-  const detectCurrentPage = React.useCallback(() => {
-    if (!containerRef.current || preserveScrollRef.current) return;
-    
-    const container = containerRef.current;
-    const scrollTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
-    
-    console.log('PdfViewerCore: detectCurrentPage called - scrollTop:', scrollTop, 'currentPage:', currentPage);
-    
-    // EMERGENCY PAGE 1 DETECTION: If scroll is very close to top, force page 1
-    if (scrollTop <= 100) {
-      console.log('PdfViewerCore: EMERGENCY PAGE 1 DETECTION - scrollTop:', scrollTop);
-      if (currentPage !== 1 && onPageChange) {
-        console.log('PdfViewerCore: EMERGENCY - Forcing page 1');
-        onPageChange({ currentPage: 1 });
-        return;
-      }
-    }
-    
-    // Try method 1: Use calculated page heights if available
-    if (pageHeights.length > 0) {
-      let detectedPage = 1;
-      
-             // More robust page detection algorithm
-       // Check which page contains the top 25% of the viewport
-       const detectionPoint = scrollTop + containerHeight * 0.25;
-       
-       // Much more aggressive page 1 detection
-       if (scrollTop <= 50) {
-         detectedPage = 1;
-         console.log('PdfViewerCore: Near top of document (scrollTop <= 50) - forcing page 1');
-       } else {
-         // Find the page that contains our detection point
-         for (let i = 0; i < pageHeights.length; i++) {
-           const currentPageStart = pageHeights[i];
-           const nextPageStart = i + 1 < pageHeights.length ? pageHeights[i + 1] : Infinity;
-           
-           console.log(`PdfViewerCore: Checking page ${i + 1}: range [${currentPageStart}, ${nextPageStart}), detectionPoint: ${detectionPoint}`);
-           
-           // If detection point is between current page start and next page start
-           if (detectionPoint >= currentPageStart && detectionPoint < nextPageStart) {
-             detectedPage = i + 1;
-             console.log(`PdfViewerCore: Detection point ${detectionPoint} falls in page ${i + 1} range [${currentPageStart}, ${nextPageStart})`);
-             break;
-           }
-         }
-       }
-      
-      console.log('PdfViewerCore: Manual page detection (method 1) - scrollTop:', scrollTop, 'containerHeight:', containerHeight, 'detectionPoint:', detectionPoint, 'detectedPage:', detectedPage, 'currentPage:', currentPage);
-      console.log('PdfViewerCore: Page heights for reference:', pageHeights);
-      
-      // Only report page change if it's different from current
-      if (detectedPage !== currentPage && onPageChange) {
-        console.log('PdfViewerCore: Manual page detection - page changed to:', detectedPage, 'calling onPageChange');
-        onPageChange({ currentPage: detectedPage }); // Use 1-based indexing consistently
-        console.log('PdfViewerCore: onPageChange called with:', { currentPage: detectedPage });
-      } else {
-        console.log('PdfViewerCore: No page change needed - detectedPage:', detectedPage, 'currentPage:', currentPage);
-      }
-      return;
-    }
-    
-    // Method 2: Fallback - use visible page elements
-    let pageElements = container.querySelectorAll('[data-testid="core__page-layer"]');
-    if (pageElements.length === 0) {
-      pageElements = container.querySelectorAll('[class*="page-layer"]');
-    }
-    if (pageElements.length === 0) {
-      pageElements = container.querySelectorAll('[class*="page"]');
-    }
-    
-    if (pageElements.length > 0) {
-      const containerRect = container.getBoundingClientRect();
-      const detectionPoint = scrollTop + containerHeight * 0.25;
-      
-      let detectedPage = 1;
-      
-      // Special handling for very top of document
-      if (scrollTop <= 50) {
-        detectedPage = 1;
-        console.log('PdfViewerCore: Near top of document (fallback, scrollTop <= 50) - forcing page 1');
-      } else {
-        // Check which page element contains our detection point
-        pageElements.forEach((pageElement, index) => {
-          const rect = pageElement.getBoundingClientRect();
-          const containerTop = containerRect.top;
-          const pageTop = rect.top - containerTop + scrollTop;
-          const pageBottom = rect.bottom - containerTop + scrollTop;
+          // Use the provided target page or fall back to current page
+          const pageToSearch = targetPage || currentPage;
           
-          console.log(`PdfViewerCore: Fallback checking page ${index + 1}: range [${pageTop}, ${pageBottom}), detectionPoint: ${detectionPoint}`);
+          console.log('📄 Searching for:', text, 'on page:', pageToSearch);
           
-          // If detection point is within this page's bounds
-          if (detectionPoint >= pageTop && detectionPoint < pageBottom) {
-            detectedPage = index + 1;
-            console.log(`PdfViewerCore: Fallback detection point ${detectionPoint} falls in page ${index + 1} range [${pageTop}, ${pageBottom})`);
+          // Set target pages at the point of use for the specific search
+          if (searchPluginInstance.setTargetPages) {
+            console.log('📄 Restricting search to page:', pageToSearch);
+            searchPluginInstance.setTargetPages((targetPageInfo) => {
+              return targetPageInfo.pageIndex === pageToSearch - 1; // Convert to 0-based
+            });
           }
-        });
-      }
-      
-      console.log('PdfViewerCore: Manual page detection (method 2) - scrollTop:', scrollTop, 'detectionPoint:', detectionPoint, 'detectedPage:', detectedPage, 'currentPage:', currentPage);
-      
-      // Only report page change if it's different from current
-      if (detectedPage !== currentPage && onPageChange) {
-        console.log('PdfViewerCore: Manual page detection (fallback) - page changed to:', detectedPage, 'calling onPageChange');
-        onPageChange({ currentPage: detectedPage });
-        console.log('PdfViewerCore: onPageChange (fallback) called with:', { currentPage: detectedPage });
-      } else {
-        console.log('PdfViewerCore: No page change needed (fallback) - detectedPage:', detectedPage, 'currentPage:', currentPage);
-      }
-    }
-  }, [pageHeights, currentPage, onPageChange]);
-
-  // Save scroll position and handle container width changes
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    let scrollTimeout: NodeJS.Timeout;
-    const handleScroll = () => {
-      if (!preserveScrollRef.current) {
-        lastScrollPositionRef.current = container.scrollTop;
-        
-        // Immediate detection for top of document to avoid delays
-        if (container.scrollTop <= 50) {
-          console.log('PdfViewerCore: Immediate page 1 detection triggered');
-          detectCurrentPage();
-        }
-        
-        // Throttle page detection to avoid excessive calls
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => {
-          detectCurrentPage();
-        }, 50); // Reduced from 100ms to 50ms for better responsiveness
-      }
-    };
-
-    const checkForWidthChange = () => {
-      const currentWidth = container.clientWidth;
-      if (lastContainerWidthRef.current > 0 && lastContainerWidthRef.current !== currentWidth) {
-        // Width changed, preserve scroll position
-        preserveScrollRef.current = true;
-        const savedPosition = lastScrollPositionRef.current;
-        
-        setTimeout(() => {
-          if (container && savedPosition > 0) {
-            container.scrollTop = savedPosition;
+          
+          // Perform the search with the shortened text
+          console.log('🔍 [PdfViewerCore] About to call highlight() with text:', text);
+          const searchPromise = highlight(text);
+          
+          if (searchPromise && typeof searchPromise.then === 'function') {
+            console.log('🔍 [PdfViewerCore] highlight() returned a promise, waiting for results...');
+            searchPromise.then((matches) => {
+              console.log('🔍 [PdfViewerCore] Search completed successfully');
+              console.log('📊 [PdfViewerCore] Number of matches found:', matches ? matches.length : 0);
+              
+              if (matches && matches.length > 0) {
+                console.log('✅ [PdfViewerCore] Matches found! Details:', matches.map(match => ({
+                  pageIndex: match.pageIndex,
+                  startIndex: match.startIndex,
+                  endIndex: match.endIndex,
+                  textPreview: match.pageText?.substring(match.startIndex, Math.min(match.endIndex + 20, match.pageText.length))
+                })));
+                
+                // Check if DOM elements are actually created
+                setTimeout(() => {
+                  const highlightElements = document.querySelectorAll('.rpv-search__highlight');
+                  console.log('🎨 [PdfViewerCore] Highlight DOM elements found:', highlightElements.length);
+                  if (highlightElements.length > 0) {
+                    console.log('🎨 [PdfViewerCore] First highlight element:', highlightElements[0]);
+                    console.log('🎨 [PdfViewerCore] Element styles:', window.getComputedStyle(highlightElements[0]));
+                  } else {
+                    console.warn('⚠️ [PdfViewerCore] No highlight DOM elements found despite matches!');
+                  }
+                }, 100);
+              } else {
+                console.warn('⚠️ [PdfViewerCore] No matches found for text:', text);
+                console.log('🔍 [PdfViewerCore] Trying to debug - checking if text exists in any form...');
+                
+                // Try a super simple search to see if anything works
+                setTimeout(() => {
+                  console.log('🧪 [PdfViewerCore] Testing with single letter search...');
+                  const testPromise = highlight(text.charAt(0));
+                  if (testPromise && typeof testPromise.then === 'function') {
+                    testPromise.then((testMatches) => {
+                      console.log('🧪 [PdfViewerCore] Single letter test found:', testMatches ? testMatches.length : 0, 'matches');
+                    });
+                  }
+                }, 200);
+              }
+            }).catch((error) => {
+              console.error('❌ [PdfViewerCore] Search error:', error);
+              console.error('❌ [PdfViewerCore] Error details:', {
+                message: error.message,
+                stack: error.stack,
+                searchText: text,
+                targetPage: pageToSearch
+              });
+            });
+          } else {
+            console.warn('⚠️ [PdfViewerCore] highlight() did not return a promise!');
+            console.log('🔍 [PdfViewerCore] highlight() returned:', searchPromise);
           }
+        },
+        clearFn: () => {
+          console.log('🧹 [PdfViewerCore] Clear highlights function called');
+          const existingHighlights = document.querySelectorAll('.rpv-search__highlight');
+          console.log('🧹 [PdfViewerCore] Found', existingHighlights.length, 'existing highlights to clear');
+          
+          clearHighlights();
+          
+          // Verify highlights were cleared
           setTimeout(() => {
-            preserveScrollRef.current = false;
-          }, 200);
-        }, 50);
-      }
-      lastContainerWidthRef.current = currentWidth;
-    };
+            const remainingHighlights = document.querySelectorAll('.rpv-search__highlight');
+            console.log('🧹 [PdfViewerCore] After clearing:', remainingHighlights.length, 'highlights remain');
+          }, 50);
+        }
+      });
+    }
+  }, [onDocumentLoadSuccess, onSearchReady, highlight, clearHighlights]);
 
-    // Initial width
-    lastContainerWidthRef.current = container.clientWidth;
+  // Handle page changes from scrolling
+  const handlePageChange = React.useCallback((e: { currentPage: number }) => {
+    // Prevent feedback loop if navigation was triggered by a button click
+    if (!isNavigationAction) {
+        console.log('📄 Page changed by scrolling to:', e.currentPage + 1); // Convert from 0-based to 1-based
+        onPageChange({ currentPage: e.currentPage + 1 });
+    }
+  }, [onPageChange, isNavigationAction]);
 
-    // Use MutationObserver to detect layout changes more reliably
-    const observer = new MutationObserver(() => {
-      checkForWidthChange();
-    });
-
-    // Use ResizeObserver as backup
-    const resizeObserver = new ResizeObserver(() => {
-      checkForWidthChange();
-    });
-
-    container.addEventListener('scroll', handleScroll);
-    observer.observe(container, { attributes: true, childList: true, subtree: true });
-    resizeObserver.observe(container);
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      observer.disconnect();
-      resizeObserver.disconnect();
-      clearTimeout(scrollTimeout);
-    };
-  }, [detectCurrentPage]); // Add detectCurrentPage to dependencies
-
-  // React to currentPage prop changes - ONLY for navigation button clicks
+  // Handle navigation button clicks
   React.useEffect(() => {
-    console.log('PdfViewerCore: currentPage changed to:', currentPage, 'isNavigationAction:', isNavigationAction);
-    
-    // Only scroll if this is an intentional page change from navigation buttons
-    if (preserveScrollRef.current || !isNavigationAction) {
-      return;
+    if (isNavigationAction && jumpToPage) {
+      console.log('🎯 Jumping to page:', currentPage);
+      jumpToPage(currentPage - 1); // Convert from 1-based to 0-based
     }
-    
-    const container = containerRef.current;
-    if (!container) return;
-    
-    // Method 1: Try using calculated page heights for navigation buttons only
-    if (pageHeights.length > 0) {
-      scrollToPage(currentPage);
-    } else {
-      // Method 2: Fallback - try to find page elements directly for navigation buttons only
-      setTimeout(() => {
-        if (!containerRef.current) return;
-        
-        const container = containerRef.current;
-        let pageElements = container.querySelectorAll('[data-testid="core__page-layer"]');
-        if (pageElements.length === 0) {
-          pageElements = container.querySelectorAll('[class*="page-layer"]');
-        }
-        if (pageElements.length === 0) {
-          pageElements = container.querySelectorAll('[class*="page"]');
-        }
-        
-        console.log('PdfViewerCore: Fallback - found', pageElements.length, 'page elements');
-        
-        if (pageElements.length > 0 && pageElements[currentPage - 1]) {
-          console.log('PdfViewerCore: Using fallback scroll to page element');
-          pageElements[currentPage - 1].scrollIntoView({
-            behavior: 'auto',
-            block: 'start'
-          });
-        }
-      }, 100);
-    }
-    
-  }, [currentPage, scrollToPage, pageHeights, isNavigationAction]);
+  }, [currentPage, isNavigationAction, jumpToPage]);
 
   return (
-    <div 
-      ref={containerRef} 
-      className="w-full h-full overflow-y-auto"
-      style={{ 
-        WebkitOverflowScrolling: 'touch',
-        scrollPaddingTop: '20px'
-      }}
-    >
-      {/* @ts-ignore */}
+    <div className="w-full h-full">
       <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
-        {/* @ts-ignore */}
         <Viewer
           fileUrl={pdfUrl}
           onDocumentLoad={handleDocumentLoad}
-          defaultScale={SpecialZoomLevel.PageWidth}
-          initialPage={0}
+          onPageChange={handlePageChange}
+          defaultScale={SpecialZoomLevel.PageFit}
+          initialPage={currentPage - 1}
+          plugins={[pageNavigationPluginInstance, searchPluginInstance]}
         />
       </Worker>
     </div>

@@ -11,6 +11,7 @@ import { getConversations, deleteConversation, renameConversation } from "@/serv
 import ImprovedRenameDialog from "./RenameDialog"
 import ImprovedDeleteDialog from "./DeleteConfirmDialog"
 import { stripPdfExtension } from '@/lib/utils';
+import AuthButton from './AuthButton';
 
 interface Conversation {
   id: string
@@ -327,6 +328,11 @@ export default function Sidebar({
               <Plus className="h-4 w-4 mr-2" />
               New Chat
             </Button>
+          </div>
+
+          {/* Authentication Button */}
+          <div className="px-6 pb-4 flex-shrink-0">
+            <AuthButton />
           </div>
 
           {/* Recent Chats Header */}
