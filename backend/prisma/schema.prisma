@@ -83,4 +83,4 @@ model Message {
   conversationId String
   error          String?     // Error message if processing failed
   parentMessageId String?    // For linking assistant messages to user messages
-}
+  }

@@ -58,20 +58,13 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
         searchFn: (text: string, targetPage?: number) => {
           console.log('📄 Search function called with text:', text, 'targetPage:', targetPage);
 
-          // Use the provided target page or fall back to current page
-          const pageToSearch = targetPage || currentPage;
+          // Clear any existing highlights first
+          clearHighlights();
           
-          console.log('📄 Searching for:', text, 'on page:', pageToSearch);
+          // Don't restrict to specific pages - search the entire document
+          console.log('📄 Searching for text globally:', text);
           
-          // Set target pages at the point of use for the specific search
-          if (searchPluginInstance.setTargetPages) {
-            console.log('📄 Restricting search to page:', pageToSearch);
-            searchPluginInstance.setTargetPages((targetPageInfo) => {
-              return targetPageInfo.pageIndex === pageToSearch - 1; // Convert to 0-based
-            });
-          }
-          
-          // Perform the search with the shortened text
+          // Perform the search
           console.log('🔍 [PdfViewerCore] About to call highlight() with text:', text);
           const searchPromise = highlight(text);
           
@@ -121,7 +114,7 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
                 message: error.message,
                 stack: error.stack,
                 searchText: text,
-                targetPage: pageToSearch
+                targetPage: targetPage
               });
             });
           } else {

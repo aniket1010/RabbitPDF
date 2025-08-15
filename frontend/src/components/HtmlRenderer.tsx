@@ -8,16 +8,39 @@ interface HtmlRendererProps {
   className?: string;
   isUserMessage?: boolean;
   contentType?: 'text' | 'html' | 'markdown';
+  onReferenceClick?: (pageNumber: number) => void;
 }
 
-export default function HtmlRenderer({ 
-  content, 
-  className = '', 
+export default function HtmlRenderer({
+  content,
+  className = '',
   isUserMessage = false,
-  contentType = 'text'
+  contentType = 'text',
+  onReferenceClick
 }: HtmlRendererProps) {
+
+  const handleClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    
+    // Handle citation button clicks
+    if (target.classList.contains('citation-button') && onReferenceClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const pageStr = target.dataset.page;
+      if (pageStr) {
+        const pageNumber = parseInt(pageStr);
+        if (!isNaN(pageNumber) && pageNumber > 0) {
+          console.log(`🔗 [HtmlRenderer] Citation clicked: Page ${pageNumber} - calling onReferenceClick`);
+          onReferenceClick(pageNumber);
+          console.log(`🔗 [HtmlRenderer] onReferenceClick called successfully`);
+        } else {
+          console.error(`🔗 [HtmlRenderer] Invalid page number: ${pageStr}`);
+        }
+      }
+    }
+  };
   
-  // If content is plain text, render it normally
   if (contentType === 'text') {
     return (
       <div className={`${className} whitespace-pre-wrap`}>
@@ -26,7 +49,7 @@ export default function HtmlRenderer({
     );
   }
 
-  // For HTML content, sanitize and render
+  // Sanitize HTML and ensure citation buttons are preserved
   const sanitizedHtml = DOMPurify.sanitize(content, {
     ALLOWED_TAGS: [
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -38,27 +61,24 @@ export default function HtmlRenderer({
       'table', 'thead', 'tbody', 'tr', 'th', 'td',
       'div', 'span',
       'hr',
-      'button' // Allow button elements for reference links
+      'button'
     ],
     ALLOWED_ATTR: [
       'href', 'target', 'rel', 'title',
-      'class', 'id',
-      'start',
-      'data-page', 'data-position', 'data-ref', // Allow reference data attributes
-      'data-click-handler', // Allow click handler identification
-      'type', 'style' // Allow button type and inline styles
+      'class', 'id', 'start',
+      'data-page', 'type', 'style'
     ],
-    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
   });
 
   return (
     <div 
       className={`html-content ${className} ${isUserMessage ? 'user-message' : 'ai-message'}`}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+      onClick={handleClick}
       style={{
         wordBreak: 'break-word',
         overflowWrap: 'break-word'
       }}
     />
   );
-} 
+}

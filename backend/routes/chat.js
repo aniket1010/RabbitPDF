@@ -91,6 +91,7 @@ router.post('/:conversationId', verifyAuth, async (req, res) => {
 
     // If processing is not complete, return the user message immediately
     if (conversation.processingStatus !== 'completed') {
+      console.log(`⏳ [Chat] Conversation ${conversationId} not ready (status: ${conversation.processingStatus}), returning pending message`);
       return res.json({
         id: userMessage.id,
         text: processedUserMessage.formatted,
@@ -247,6 +248,82 @@ router.get('/:conversationId/debug-references', verifyAuth, async (req, res) => 
   } catch (error) {
     console.error('Error in debug references route:', error);
     res.status(500).json({ error: 'Error debugging references' });
+  }
+});
+
+// Debug endpoint to manually process pending messages
+router.post('/:conversationId/process-pending', verifyAuth, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    // Check if conversation exists and belongs to user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
+    }
+
+    console.log(`🔧 [Debug] Manual processing triggered for conversation ${conversationId}`);
+    
+    // Update conversation status to completed if it's stuck
+    if (conversation.processingStatus !== 'completed') {
+      console.log(`🔧 [Debug] Updating conversation status from ${conversation.processingStatus} to completed`);
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { processingStatus: 'completed' }
+      });
+    }
+
+    // Find pending messages
+    const pendingMessages = await prisma.message.findMany({
+      where: {
+        conversationId: conversationId,
+        status: { in: ['pending', 'processing'] },
+        role: 'user'
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    console.log(`🔧 [Debug] Found ${pendingMessages.length} pending messages to process`);
+
+    const results = [];
+    const { processAndRespondToMessage } = require('../services/messageProcessor');
+
+    for (const message of pendingMessages) {
+      try {
+        const assistantMessage = await processAndRespondToMessage(message);
+        results.push({ 
+          messageId: message.id, 
+          status: 'success', 
+          assistantMessageId: assistantMessage?.id 
+        });
+      } catch (error) {
+        console.error(`❌ [Debug] Error processing message ${message.id}:`, error);
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { status: 'error', error: error.message }
+        });
+        results.push({ 
+          messageId: message.id, 
+          status: 'error', 
+          error: error.message 
+        });
+      }
+    }
+
+    res.json({
+      message: `Processed ${pendingMessages.length} pending messages`,
+      results: results
+    });
+
+  } catch (error) {
+    console.error('Error processing pending messages:', error);
+    res.status(500).json({ error: 'Error processing pending messages' });
   }
 });
 

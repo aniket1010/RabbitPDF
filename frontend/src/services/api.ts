@@ -77,9 +77,26 @@ export async function deleteConversation(conversationId: string) {
   return api.delete(`/conversation/${conversationId}`);
 }
 
-export async function renameConversation(conversationId: string, newTitle: string) {
-  return api.patch(`/conversation/${conversationId}/rename`, { newTitle });
-}
+export const renameConversation = async (conversationId: string, newTitle: string) => {
+  const response = await api.patch(`/conversation/${conversationId}/rename`, { newTitle });
+  return response.data;
+};
+
+// User profile API calls
+export const updateUsername = async (name: string) => {
+  const response = await api.patch('/user/profile', { name });
+  return response.data;
+};
+
+export const updateUserAvatar = async (avatar: string) => {
+  const response = await api.patch('/user/avatar', { avatar });
+  return response.data;
+};
+
+export const getUserProfile = async () => {
+  const response = await api.get('/user/profile');
+  return response.data;
+};
 
 export async function getConversationPDF(conversationId: string) {
   return api.get(`/conversation/${conversationId}/pdf`, { responseType: 'blob' });
@@ -111,5 +128,15 @@ export async function getConversationSummary(conversationId: string) {
 
 export async function generateConversationSummary(conversationId: string) {
   const res = await api.post(`/conversation/${conversationId}/summary/generate`);
+  return res.data;
+}
+
+export async function processPendingMessages(conversationId: string) {
+  const res = await api.post(`/chat/${conversationId}/process-pending`);
+  return res.data;
+}
+
+export async function getConversationStatus(conversationId: string) {
+  const res = await api.get(`/conversation/${conversationId}/details`);
   return res.data;
 } 

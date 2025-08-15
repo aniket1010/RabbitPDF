@@ -11,6 +11,15 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.example
+
+# CRITICAL: Prevent any loose credential files
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET
+NEXTAUTH_SECRET
+NEXTAUTH_URL
 
 # Build outputs
 dist/

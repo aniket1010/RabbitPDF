@@ -5,13 +5,17 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { PanelLeft, PanelRight, Plus, FileText, MessageSquare, Edit, Trash2 } from "lucide-react"
+import { PanelLeft, PanelRight, Plus, FileText, MessageSquare, Edit, Trash2, Settings } from 'lucide-react'
 import { useRouter, usePathname } from "next/navigation"
 import { getConversations, deleteConversation, renameConversation } from "@/services/api"
 import ImprovedRenameDialog from "./RenameDialog"
 import ImprovedDeleteDialog from "./DeleteConfirmDialog"
+import SettingsDialog from "./SettingsDialog"
 import { stripPdfExtension } from '@/lib/utils';
-import AuthButton from './AuthButton';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import { LogIn, LogOut, User } from 'lucide-react';
+import Image from 'next/image';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface Conversation {
   id: string
@@ -30,6 +34,192 @@ interface MinimalistSidebarProps {
   onConversationDelete?: (conversationId: string) => void
 }
 
+// Collapsed User Section Component
+function CollapsedUserSection({ 
+  onSettingsClick, 
+  userName 
+}: { 
+  onSettingsClick: () => void;
+  userName?: string;
+}) {
+  const { data: session, status } = useSession();
+
+  console.log('🔍 [Sidebar] Session check:', { status, hasSession: !!session, user: session?.user });
+
+  if (status === 'loading') {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <button 
+          className="p-1.5 rounded-md text-black/40"
+          disabled
+          title="Loading..."
+        >
+          <div className="animate-spin h-3.5 w-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full"></div>
+        </button>
+      </div>
+    );
+  }
+
+  if (session?.user) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        {/* Settings Icon */}
+        <button 
+          onClick={onSettingsClick}
+          className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+          title={userName || 'Settings'}
+          aria-label="Settings"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+        
+        {/* Sign Out Icon */}
+        <button 
+          onClick={() => signOut()}
+          className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+          title="Sign Out"
+          aria-label="Sign Out"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      {/* Settings Icon */}
+      <button 
+        onClick={onSettingsClick}
+        className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+        title="Settings"
+        aria-label="Settings"
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </button>
+      
+      {/* Sign In Icon */}
+      <button 
+        onClick={() => signIn()}
+        className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+        title="Sign In"
+        aria-label="Sign In"
+      >
+        <LogIn className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// User Section Component with Authentication
+function UserSection({ 
+  onSettingsClick, 
+  userName, 
+  userEmail, 
+  userImage 
+}: { 
+  onSettingsClick: () => void;
+  userName: string;
+  userEmail: string;
+  userImage: string;
+}) {
+  const { data: session, status } = useSession();
+
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center">
+          <div className="animate-spin h-3 w-3 border-2 border-gray-300 border-t-gray-600 rounded-full"></div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-black/60">Loading...</p>
+        </div>
+        <button 
+          onClick={onSettingsClick}
+          className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (session?.user) {
+    return (
+      <div className="space-y-3">
+        {/* User Info Row */}
+        <div className="flex items-center gap-3 min-h-10">
+          <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0">
+            {userImage ? (
+              <Image
+                src={userImage}
+                alt={userName || 'User'}
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+                unoptimized
+              />
+            ) : (
+              <User className="h-4 w-4 text-black/60 flex-shrink-0" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-black truncate">{userName || 'User'}</p>
+            <p className="text-xs text-black/50 truncate">{userEmail}</p>
+          </div>
+          <button 
+            onClick={onSettingsClick}
+            className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70 flex-shrink-0"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        
+        {/* Sign Out Button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => signOut()}
+          className="w-full flex items-center gap-2 h-8 text-xs border-black/20 hover:bg-black hover:text-white transition-all duration-200 ease-out"
+        >
+          <LogOut className="h-3 w-3" />
+          Sign Out
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Guest User Row */}
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center">
+          <User className="h-4 w-4 text-black/60" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-black truncate">Guest User</p>
+          <p className="text-xs text-black/50 truncate">Not signed in</p>
+        </div>
+        <button 
+          onClick={onSettingsClick}
+          className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      
+      {/* Sign In Button */}
+      <Button
+        onClick={() => signIn()}
+        className="w-full flex items-center gap-2 h-8 text-xs bg-black hover:bg-black/90 text-white transition-all duration-200 ease-out"
+      >
+        <LogIn className="h-3 w-3" />
+        Sign In
+      </Button>
+    </div>
+  );
+}
+
 export default function Sidebar({
   selectedConversation,
   onSelectConversation,
@@ -44,6 +234,12 @@ export default function Sidebar({
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { onConversationRenamed, onUserProfileUpdated } = useWebSocket()
+  
+  // Local state for user data to handle real-time updates
+  const [currentUserName, setCurrentUserName] = useState<string>('')
+  const [currentUserAvatar, setCurrentUserAvatar] = useState<string>('')
+  
   const [renameDialog, setRenameDialog] = useState<{ open: boolean; conversationId: string; title: string }>({
     open: false,
     conversationId: "",
@@ -54,13 +250,28 @@ export default function Sidebar({
     conversationId: "",
     title: "",
   })
+  const [settingsDialog, setSettingsDialog] = useState<{ open: boolean }>({
+    open: false,
+  })
   const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({})
   const [isClient, setIsClient] = useState(false)
+  
+  // Get session data
+  const { data: session, status } = useSession()
 
   // Client-side hydration check
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  // Sync session data to local state
+  useEffect(() => {
+    if (session?.user) {
+      setCurrentUserName(session.user.name || '')
+      // Prioritize custom avatar over OAuth profile picture
+      setCurrentUserAvatar(session.user.avatar || session.user.image || '')
+    }
+  }, [session?.user])
 
   // Simple sidebar width management
   useEffect(() => {
@@ -75,12 +286,65 @@ export default function Sidebar({
     }
   }, [])
 
-  const activeConversationId =
-    selectedConversation || (pathname.startsWith("/conversation/") ? pathname.split("/")[2] : null)
+  // Only set activeConversationId if the conversation actually exists in the user's conversation list
+  const urlConversationId = pathname.startsWith("/conversation/") ? pathname.split("/")[2] : null
+  const activeConversationId = selectedConversation || 
+    (urlConversationId && conversations.some(conv => conv.id === urlConversationId) ? urlConversationId : null)
 
   useEffect(() => {
     loadConversations()
   }, [])
+
+  // Redirect to home if user is on an invalid conversation URL
+  useEffect(() => {
+    // Only check after conversations have loaded (not during loading state)
+    if (!loading && urlConversationId && !conversations.some(conv => conv.id === urlConversationId)) {
+      console.log('🔄 [Sidebar] Redirecting to home - conversation not found:', urlConversationId);
+      router.push('/');
+    }
+  }, [loading, urlConversationId, conversations, router]);
+
+  // Set up WebSocket listener for conversation renames
+  useEffect(() => {
+    if (onConversationRenamed) {
+      const cleanup = onConversationRenamed((data) => {
+        console.log('🔄 [Sidebar] Received conversation renamed:', data);
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === data.conversationId ? { ...conv, title: data.newTitle } : conv
+          )
+        );
+        
+        // Also notify parent component
+        if (onConversationUpdate) {
+          onConversationUpdate(data.conversationId, data.newTitle);
+        }
+      });
+
+      return cleanup;
+    }
+  }, [onConversationRenamed, onConversationUpdate]);
+
+  // Set up WebSocket listener for user profile updates
+  useEffect(() => {
+    if (onUserProfileUpdated) {
+      const cleanup = onUserProfileUpdated((data) => {
+        console.log('🔄 [Sidebar] Received user profile update:', data);
+        
+        // Update local state based on the update type
+        if (data.type === 'username' && data.name) {
+          setCurrentUserName(data.name);
+          console.log('🔄 [Sidebar] Updated local username to:', data.name);
+        }
+        if (data.type === 'avatar' && data.avatar) {
+          setCurrentUserAvatar(data.avatar);
+          console.log('🔄 [Sidebar] Updated local avatar to:', data.avatar);
+        }
+      });
+
+      return cleanup;
+    }
+  }, [onUserProfileUpdated]);
 
   const loadConversations = async () => {
     try {
@@ -152,7 +416,7 @@ export default function Sidebar({
     setRenameDialog({
       open: true,
       conversationId: conversation.id,
-      title: conversation.title,
+      title: stripPdfExtension(conversation.title),
     })
   }
 
@@ -161,7 +425,7 @@ export default function Sidebar({
     setDeleteDialog({
       open: true,
       conversationId: conversation.id,
-      title: conversation.title,
+      title: stripPdfExtension(conversation.title),
     })
   }
 
@@ -173,15 +437,15 @@ export default function Sidebar({
     try {
       await renameConversation(renameDialog.conversationId, newTitle)
 
-      // Update local state
-      setConversations((prev) =>
-        prev.map((conv) => (conv.id === renameDialog.conversationId ? { ...conv, title: newTitle } : conv)),
-      )
+      // Remove local state update - WebSocket will handle it
+      // setConversations((prev) =>
+      //   prev.map((conv) => (conv.id === renameDialog.conversationId ? { ...conv, title: newTitle } : conv)),
+      // )
 
-      // Notify parent component
-      if (onConversationUpdate) {
-        onConversationUpdate(renameDialog.conversationId, newTitle)
-      }
+      // Notify parent component - this will be handled by WebSocket listener
+      // if (onConversationUpdate) {
+      //   onConversationUpdate(renameDialog.conversationId, newTitle)
+      // }
 
       setRenameDialog({ open: false, conversationId: "", title: "" })
     } catch (err) {
@@ -220,6 +484,10 @@ export default function Sidebar({
     } finally {
       setActionLoading((prev) => ({ ...prev, [deleteDialog.conversationId]: false }))
     }
+  }
+
+  const handleSettingsClick = () => {
+    setSettingsDialog({ open: true })
   }
 
   const formatDate = (dateString: string) => {
@@ -328,11 +596,6 @@ export default function Sidebar({
               <Plus className="h-4 w-4 mr-2" />
               New Chat
             </Button>
-          </div>
-
-          {/* Authentication Button */}
-          <div className="px-6 pb-4 flex-shrink-0">
-            <AuthButton />
           </div>
 
           {/* Recent Chats Header */}
@@ -474,19 +737,11 @@ export default function Sidebar({
                     </button>
                   ))
                 ) : (
-                  <div className="w-10 h-10 bg-black/5 rounded-lg flex items-center justify-center">
-                    <span className="text-black/30 text-xs">0</span>
-                  </div>
+                  // Empty state - no visual indicator needed in collapsed view
+                  null
                 )}
               </div>
             </ScrollArea>
-          </div>
-
-          {/* Collapsed User Details */}
-          <div className="p-3 pb-4 flex-shrink-0">
-            <div className="w-10 h-10 bg-black/10 rounded-lg flex items-center justify-center">
-              <span className="text-black/50 text-xs font-medium">U</span>
-            </div>
           </div>
         </div>
       </div>
@@ -501,20 +756,28 @@ export default function Sidebar({
           transitionDelay: isExpanded ? "0.1s" : "0s",
         }}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center">
-            <span className="text-black/60 text-sm font-medium">U</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-black truncate">User Name</p>
-            <p className="text-xs text-black/50 truncate">user@example.com</p>
-          </div>
-          <button className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        </div>
+        <UserSection 
+          onSettingsClick={handleSettingsClick}
+          userName={currentUserName}
+          userEmail={session?.user?.email || ''}
+          userImage={currentUserAvatar}
+        />
+      </div>
+
+      {/* Collapsed Settings Icon - Fixed positioning to match expanded state */}
+      <div 
+        className="absolute bottom-0 right-0 w-16 border-t border-black/10 p-4 flex-shrink-0"
+        style={{
+          opacity: isExpanded ? 0 : 1,
+          visibility: isExpanded ? "hidden" : "visible",
+          transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
+          transitionDelay: isExpanded ? "0s" : "0.1s",
+        }}
+      >
+        <CollapsedUserSection 
+          onSettingsClick={handleSettingsClick}
+          userName={currentUserName}
+        />
       </div>
 
       {/* Rename Dialog */}
@@ -533,6 +796,12 @@ export default function Sidebar({
         title={deleteDialog.title}
         onConfirm={handleDelete}
         isLoading={actionLoading[deleteDialog.conversationId]}
+      />
+
+      {/* Settings Dialog */}
+      <SettingsDialog
+        open={settingsDialog.open}
+        onOpenChange={(open) => setSettingsDialog({ open })}
       />
     </div>
   )

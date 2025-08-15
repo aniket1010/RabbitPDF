@@ -12,4 +12,5 @@ export { default as AuthButton } from './AuthButton';
 export { default as AuthGuard } from './AuthGuard';
 export { default as Providers } from './Providers';
 export { default as ReferenceLink } from './ReferenceLink';
-export { default as MessageWithReferences } from './MessageWithReferences'; 
+export { default as SettingsDialog } from './SettingsDialog';
+ 

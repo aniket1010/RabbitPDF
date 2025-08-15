@@ -1,73 +1,163 @@
-const { getToken } = require("next-auth/jwt");
+const jwt = require('jsonwebtoken');
+const { getToken } = require('next-auth/jwt');
 
-/**
- * Middleware to verify NextAuth JWT token and extract user ID
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object  
- * @param {Function} next - Express next function
- */
+// Existing middleware for HTTP routes
 async function verifyAuth(req, res, next) {
   try {
-    console.log('🔐 [Auth] Verifying authentication...');
-    console.log('🔐 [Auth] Cookies:', Object.keys(req.cookies || {}));
-    
-    // Get the JWT token from the request
-    const token = await getToken({ 
-      req, 
-      secret: process.env.NEXTAUTH_SECRET,
-      // NextAuth stores tokens in cookies, so we need to pass the cookie
-      raw: false
+    console.log('🔍 [Auth] Verifying request:', {
+      url: req.url,
+      method: req.method,
+      nodeEnv: process.env.NODE_ENV,
+      hasNonProdEnv: process.env.NODE_ENV !== 'production',
+      cookies: Object.keys(req.cookies || {})
     });
 
-    console.log('🔐 [Auth] Token found:', !!token);
-    console.log('🔐 [Auth] Token has ID:', !!token?.id);
-
-    if (!token || !token.id) {
-      console.log('❌ [Auth] Authentication failed - no valid token');
-      return res.status(401).json({ 
-        error: 'Authentication required. Please sign in.' 
+    // Use NextAuth's getToken function to properly verify the session
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      secureCookie: process.env.NODE_ENV === 'production'
+    });
+    
+    if (!token) {
+      console.log('🔍 [Auth] No valid token found, checking bypass conditions:', {
+        nodeEnv: process.env.NODE_ENV,
+        isNotProduction: process.env.NODE_ENV !== 'production'
       });
+      
+      if (process.env.NODE_ENV !== 'production') {
+        // DEV BYPASS: allow requests without authentication in development
+        console.warn('✅ [Auth] DEV BYPASS ACTIVATED - No session token, allowing request');
+        req.userId = 'dev-user';
+        req.userEmail = 'dev@example.com';
+        req.userName = 'Developer';
+        return next();
+      }
+      console.log('❌ [Auth] No session token found, NODE_ENV is production');
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Add user ID to request object for use in route handlers
-    req.userId = token.id;
+    // Extract user information from the verified NextAuth token
+    req.userId = token.sub || token.id;
     req.userEmail = token.email;
     req.userName = token.name;
-    
-    console.log('✅ [Auth] Authentication successful for user:', token.email);
+
+    console.log('✅ [Auth] Authenticated user:', {
+      id: req.userId,
+      email: req.userEmail,
+      name: req.userName
+    });
+
     next();
   } catch (error) {
-    console.error('❌ [Auth] Auth verification error:', error);
-    return res.status(401).json({ 
-      error: 'Invalid authentication token' 
-    });
+    console.error('❌ [Auth] Authentication error:', error);
+    
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('✅ [Auth] DEV BYPASS ACTIVATED - Auth error, allowing request');
+      req.userId = 'dev-user';
+      req.userEmail = 'dev@example.com';
+      req.userName = 'Developer';
+      return next();
+    }
+    
+    res.status(401).json({ error: 'Authentication failed' });
   }
 }
 
-/**
- * Optional auth middleware - allows both authenticated and anonymous users
- * If authenticated, adds user info to request. If not, continues without user info.
- */
+// New function for WebSocket authentication
+async function verifyAuthSocket(req) {
+  try {
+    console.log('🔍 [Auth] WebSocket token extraction attempt:', {
+      cookies: Object.keys(req.cookies || {}),
+      headers: Object.keys(req.headers || {}),
+      hasSessionToken: !!(req.cookies && req.cookies['next-auth.session-token']),
+      nodeEnv: process.env.NODE_ENV
+    });
+    
+    // Use NextAuth's getToken function for WebSocket authentication
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      secureCookie: process.env.NODE_ENV === 'production'
+    });
+    
+    console.log('🔍 [Auth] WebSocket token result:', {
+      hasToken: !!token,
+      tokenSub: token?.sub,
+      tokenId: token?.id,
+      tokenEmail: token?.email,
+      tokenName: token?.name
+    });
+    
+    if (!token) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('⚠️ [Auth] No WebSocket token – DEV bypass active');
+        return {
+          authenticated: true,
+          userId: 'dev-user',
+          userEmail: 'dev@example.com',
+          userName: 'Developer'
+        };
+      }
+      return { authenticated: false, error: 'No session token found' };
+    }
+
+    // Return user information from verified NextAuth token
+    const result = {
+      authenticated: true,
+      userId: token.sub || token.id,
+      userEmail: token.email,
+      userName: token.name
+    };
+    
+    console.log('✅ [Auth] WebSocket authentication successful:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ [Auth] WebSocket authentication error:', error);
+    return { authenticated: false, error: 'Authentication failed' };
+  }
+}
+
+// Optional auth middleware for routes that don't require authentication
 async function optionalAuth(req, res, next) {
   try {
-    const token = await getToken({ 
-      req, 
+    console.log('🔍 [OptionalAuth] Processing optional auth for:', req.url);
+    
+    // Use NextAuth's getToken function to properly verify the session
+    const token = await getToken({
+      req,
       secret: process.env.NEXTAUTH_SECRET,
-      raw: false
+      secureCookie: process.env.NODE_ENV === 'production'
     });
-
-    if (token && token.id) {
-      req.userId = token.id;
-      req.userEmail = token.email;
-      req.userName = token.name;
+    
+    if (!token) {
+      // No token, but that's okay for optional auth
+      req.userId = 'dev-user';
+      req.userEmail = 'dev@example.com';  
+      req.userName = 'Developer';
+      console.log('🔍 [OptionalAuth] No token found, using default dev user');
+      return next();
     }
-    // Continue regardless of auth status
+
+    // If token exists and is valid, use the real user info
+    req.userId = token.sub || token.id;
+    req.userEmail = token.email;
+    req.userName = token.name;
+    console.log('✅ [OptionalAuth] Valid token found and verified');
+    
     next();
   } catch (error) {
-    console.error('Optional auth error:', error);
-    // Continue without auth info if there's an error
+    console.error('❌ [OptionalAuth] Error:', error);
+    // On error, continue with dev user
+    req.userId = 'dev-user';
+    req.userEmail = 'dev@example.com';
+    req.userName = 'Developer';
     next();
   }
 }
 
-module.exports = { verifyAuth, optionalAuth }; 
+module.exports = {
+  verifyAuth,
+  verifyAuthSocket,
+  optionalAuth
+};

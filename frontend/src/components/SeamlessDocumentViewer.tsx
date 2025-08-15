@@ -4,23 +4,61 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import PreviewPDF from './PreviewPDF';
 
+interface Coordinate {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 interface SeamlessDocumentViewerProps {
   conversationId: string;
   pdfTitle?: string;
-  onReferenceClick?: (pageNumber: number, textToHighlight: string) => void;
-  referenceClick?: {pageNumber: number, textToHighlight: string} | null;
+  onReferenceClick?: (pageNumber: number, coordinates: Coordinate[]) => void;
+  referenceClick?: { pageNumber: number, coordinates: Coordinate[] } | null;
   onReferenceProcessed?: () => void;
 }
+
+// New component to render highlights as an overlay
+const HighlightLayer: React.FC<{ highlights: { pageNumber: number; coordinates: Coordinate[] } | null; currentPage: number }> = ({ highlights, currentPage }) => {
+    if (!highlights || highlights.pageNumber !== currentPage) {
+        return null;
+    }
+
+    // Handle case where coordinates is undefined, null, or empty
+    if (!highlights.coordinates || !Array.isArray(highlights.coordinates) || highlights.coordinates.length === 0) {
+        return null;
+    }
+
+    return (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            {highlights.coordinates.map((coord, index) => (
+                <div
+                    key={index}
+                    style={{
+                        position: 'absolute',
+                        left: `${coord.x}%`,
+                        top: `${coord.y}%`,
+                        width: `${coord.width}%`,
+                        height: `${coord.height}%`,
+                        backgroundColor: 'rgba(255, 255, 0, 0.3)',
+                        border: '1px solid #ff0'
+                    }}
+                />
+            ))}
+        </div>
+    );
+};
 
 export default function SeamlessDocumentViewer({ 
   conversationId, 
   pdfTitle, 
-  onReferenceClick,
   referenceClick,
   onReferenceProcessed
 }: SeamlessDocumentViewerProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPdfPages, setTotalPdfPages] = useState(0);
+  const [highlights, setHighlights] = useState<{ pageNumber: number; coordinates: Coordinate[] } | null>(null);
   const [showControls, setShowControls] = useState(false);
   const [mouseInside, setMouseInside] = useState(false);
   const [isNavigationAction, setIsNavigationAction] = useState(false);
@@ -28,8 +66,7 @@ export default function SeamlessDocumentViewer({
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [prevConversationId, setPrevConversationId] = useState<string | null>(null);
 
-  // Ref to store search functions from PDF viewer
-  const searchFunctionsRef = useRef<{ searchFn: (text: string, targetPage?: number) => void; clearFn: () => void } | null>(null);
+
 
   // Debug currentPage changes
   useEffect(() => {
@@ -50,10 +87,7 @@ export default function SeamlessDocumentViewer({
       setInputValue('1');
       setPrevConversationId(conversationId);
       
-      // Clear any existing highlights when switching conversations
-      if (searchFunctionsRef.current?.clearFn) {
-        searchFunctionsRef.current.clearFn();
-      }
+
     }
   }, [conversationId, prevConversationId]);
 
@@ -118,136 +152,35 @@ export default function SeamlessDocumentViewer({
     }
   }, [inputValue, totalPdfPages, currentPage]);
 
-  // Handle search ready callback from PDF viewer
-  const handleSearchReady = useCallback((searchFunctions: { searchFn: (text: string, targetPage?: number) => void; clearFn: () => void }) => {
-    console.log('📄 [SeamlessDocumentViewer] Search functions ready');
-    searchFunctionsRef.current = searchFunctions;
-  }, []);
+
 
   // Handle reference clicks and highlighting
   useEffect(() => {
-    let highlightTimer: NodeJS.Timeout | null = null;
-    
     if (referenceClick && totalPdfPages > 0) {
-      const { pageNumber, textToHighlight } = referenceClick;
-      console.log('📄 [SeamlessDocumentViewer] === REFERENCE CLICK START ===');
-      console.log('📄 [SeamlessDocumentViewer] Target page:', pageNumber);
-      console.log('📄 [SeamlessDocumentViewer] Text to highlight:', textToHighlight);
-      console.log('📄 [SeamlessDocumentViewer] Current PDF pages:', totalPdfPages);
-      console.log('📄 [SeamlessDocumentViewer] Search functions available:', !!searchFunctionsRef.current);
-      
-      if (pageNumber >= 1 && pageNumber <= totalPdfPages) {
-        // 1. Navigate to the correct page
-        console.log('🎯 [SeamlessDocumentViewer] Navigating to page:', pageNumber);
-        setCurrentPage(pageNumber);
-        setInputValue(pageNumber.toString());
-        setIsNavigationAction(true);
+        const { pageNumber, coordinates } = referenceClick;
 
-        // 2. Use a delay to allow the page to render before highlighting
-        console.log('⏱️ [SeamlessDocumentViewer] Setting 300ms timer for highlighting...');
-        highlightTimer = setTimeout(() => {
-          console.log('⏱️ [SeamlessDocumentViewer] 🔥 TIMER FIRED! Starting highlighting process');
-          console.log('⏱️ [SeamlessDocumentViewer] Timer ID was:', highlightTimer);
-          
-          if (searchFunctionsRef.current) {
-            const { searchFn, clearFn } = searchFunctionsRef.current;
+        if (pageNumber >= 1 && pageNumber <= totalPdfPages) {
+            console.log('🔗 [SeamlessDocumentViewer] Processing reference click to page:', pageNumber);
             
-            // First, clear any previous highlights
-            console.log('🧹 [SeamlessDocumentViewer] Clearing existing highlights');
-            clearFn();
+            // 1. Navigate to the correct page
+            setCurrentPage(pageNumber);
+            setInputValue(pageNumber.toString());
             
-            // Helper function to select meaningful text for highlighting
-            const selectSearchText = (text: string) => {
-              const cleanText = text.trim();
-              console.log('✂️ [SeamlessDocumentViewer] Original reference text:', cleanText);
-              console.log('✂️ [SeamlessDocumentViewer] Text length:', cleanText.length);
-              
-              // Strategy 1: If text is short (< 50 chars), use it as-is
-              if (cleanText.length <= 50) {
-                console.log('✂️ [SeamlessDocumentViewer] Strategy: Using full text (short)');
-                return cleanText;
-              }
-              
-              // Strategy 2: Look for a meaningful sentence
-              const sentences = cleanText.split(/[.!?]+/);
-              if (sentences[0] && sentences[0].trim().length > 10 && sentences[0].trim().length <= 100) {
-                const firstSentence = sentences[0].trim();
-                console.log('✂️ [SeamlessDocumentViewer] Strategy: Using first sentence');
-                console.log('✂️ [SeamlessDocumentViewer] Selected sentence:', firstSentence);
-                return firstSentence;
-              }
-              
-              // Strategy 3: Take first 6-8 meaningful words (more than the previous 2)
-              const words = cleanText.split(/\s+/);
-              const meaningfulWords = words.filter(word => word.length > 2); // Filter out very short words like "a", "is", "to"
-              const selectedWords = meaningfulWords.slice(0, 8); // Take up to 8 meaningful words
-              const result = selectedWords.join(' ');
-              
-              console.log('✂️ [SeamlessDocumentViewer] Strategy: Using 8 meaningful words');
-              console.log('✂️ [SeamlessDocumentViewer] All words:', words);
-              console.log('✂️ [SeamlessDocumentViewer] Meaningful words:', meaningfulWords);
-              console.log('✂️ [SeamlessDocumentViewer] Selected words:', selectedWords);
-              return result;
-            };
+            // 2. Set navigation action flag to trigger PDF jump
+            setIsNavigationAction(true);
+            setTimeout(() => setIsNavigationAction(false), 100);
             
-            const searchText = selectSearchText(textToHighlight);
-            console.log(`🔍 [SeamlessDocumentViewer] === HIGHLIGHTING START ===`);
-            console.log(`🔍 [SeamlessDocumentViewer] Original text: "${textToHighlight}"`);
-            console.log(`🔍 [SeamlessDocumentViewer] Selected search text: "${searchText}"`);
-            console.log(`🔍 [SeamlessDocumentViewer] Target page: ${pageNumber}`);
-            
-            // Pass both the search text and current page number
-            searchFn(searchText, pageNumber);
-            
-            // Add a follow-up check after highlighting
-            setTimeout(() => {
-              const highlights = document.querySelectorAll('.rpv-search__highlight');
-              console.log('🎨 [SeamlessDocumentViewer] Post-highlight check: found', highlights.length, 'highlight elements');
-              if (highlights.length > 0) {
-                console.log('✅ [SeamlessDocumentViewer] === HIGHLIGHTING SUCCESS ===');
-                highlights.forEach((el, index) => {
-                  console.log(`🎨 [SeamlessDocumentViewer] Highlight ${index + 1}:`, el.textContent);
-                });
-              } else {
-                console.warn('❌ [SeamlessDocumentViewer] === HIGHLIGHTING FAILED ===');
-                console.warn('❌ [SeamlessDocumentViewer] No highlights found in DOM after search');
-              }
-            }, 500);
-            
-          } else {
-            console.error('❌ [SeamlessDocumentViewer] Search functions not available for highlighting!');
-            console.error('❌ [SeamlessDocumentViewer] searchFunctionsRef.current is:', searchFunctionsRef.current);
-          }
-          
-          // 3. Signal that the reference has been processed (after highlighting attempt)
-          console.log('📄 [SeamlessDocumentViewer] === REFERENCE CLICK END ===');
-          if (onReferenceProcessed) {
-            console.log('📄 [SeamlessDocumentViewer] Calling onReferenceProcessed to clear reference state');
-            onReferenceProcessed();
-          } else {
-            console.log('📄 [SeamlessDocumentViewer] No onReferenceProcessed callback provided');
-          }
-          
-          setIsNavigationAction(false);
-        }, 300); // Increased to 300ms for better PDF rendering
-        
-        console.log('⏱️ [SeamlessDocumentViewer] Timer created with ID:', highlightTimer);
-      } else {
-        console.error('❌ Invalid page number for reference click:', pageNumber, 'Total pages:', totalPdfPages);
-      }
+            // 3. Set highlights
+            setHighlights({ pageNumber, coordinates });
 
-      // Note: We'll call onReferenceProcessed after highlighting completes, not here
+            // 4. Signal that the reference has been processed
+            if (onReferenceProcessed) {
+                onReferenceProcessed();
+            }
+        } else {
+            console.error(`Invalid page number for reference click: ${pageNumber}`);
+        }
     }
-    
-    // Cleanup timer if the component re-renders before it fires
-    return () => {
-      if (highlightTimer) {
-        console.log('🧹 [SeamlessDocumentViewer] ⚠️ CLEANUP: Clearing highlight timer', highlightTimer, 'before it fired!');
-        clearTimeout(highlightTimer);
-      } else {
-        console.log('🧹 [SeamlessDocumentViewer] Cleanup called, no timer to clear');
-      }
-    };
   }, [referenceClick, totalPdfPages, onReferenceProcessed]);
 
   return (
@@ -264,20 +197,14 @@ export default function SeamlessDocumentViewer({
           onPdfLoad={(totalPages) => {
             setTotalPdfPages(totalPages);
             setIsLoadingConversation(false);
-            console.log('SeamlessDocumentViewer: PDF loaded with', totalPages, 'pages');
           }}
           onPageChange={(page) => {
-            console.log('SeamlessDocumentViewer: onPageChange called with page:', page, 'currentPage:', currentPage);
-            console.log('SeamlessDocumentViewer: Updating currentPage to:', page);
             setCurrentPage(page);
             setInputValue(page.toString());
-            console.log('SeamlessDocumentViewer: setCurrentPage called with:', page);
           }}
-          onError={() => {
-            setIsLoadingConversation(false);
-          }}
-          onSearchReady={handleSearchReady}
+          onError={() => setIsLoadingConversation(false)}
         />
+        <HighlightLayer highlights={highlights} currentPage={currentPage} />
       </div>
 
       {/* Navigation Controls */}

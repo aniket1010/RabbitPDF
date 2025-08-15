@@ -17,22 +17,24 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   const [isClient, setIsClient] = useState(false);
   const [pdfTitle, setPdfTitle] = useState<string>('');
 
-  // Simple reference click handler - just pass to SeamlessDocumentViewer
-  const handleReferenceClick = useCallback((pageNumber: number, textToHighlight: string) => {
-    console.log('📄 Reference clicked - Page:', pageNumber, 'Text:', textToHighlight);
+  // Reference click handler - updated for new citation system
+  const handleReferenceClick = useCallback((pageNumber: number, coordinates?: any[]) => {
+    console.log('📄 [ResponsiveLayout] Reference clicked - Page:', pageNumber, 'Coordinates:', coordinates || 'none');
     
     // Validate pageNumber
     if (!pageNumber || isNaN(pageNumber) || pageNumber < 1) {
-      console.error('❌ Invalid pageNumber:', pageNumber);
+      console.error('❌ [ResponsiveLayout] Invalid pageNumber:', pageNumber);
       return;
     }
     
+    console.log('📄 [ResponsiveLayout] Setting referenceClick state with page:', pageNumber);
     // Store the reference click data to pass to SeamlessDocumentViewer
-    setReferenceClick({ pageNumber, textToHighlight });
+    // For new citation system, coordinates will be undefined/empty
+    setReferenceClick({ pageNumber, coordinates: coordinates || [] });
   }, []);
 
   // State to pass reference clicks to SeamlessDocumentViewer
-  const [referenceClick, setReferenceClick] = useState<{pageNumber: number, textToHighlight: string} | null>(null);
+  const [referenceClick, setReferenceClick] = useState<{pageNumber: number, coordinates: any[]} | null>(null);
 
   // Callback to clear reference click after processing
   const handleReferenceProcessed = useCallback(() => {

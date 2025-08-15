@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 
 interface DialogProps {
@@ -8,6 +9,12 @@ interface DialogProps {
 }
 
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
   React.useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -26,14 +33,25 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
     }
   }, [open, onOpenChange])
 
-  if (!open) return null
+  if (!open || !mounted) return null
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in-0 duration-200">
+  return createPortal(
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in-0 duration-200"
+      style={{ 
+        zIndex: 9999,
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0
+      }}
+    >
       <div className="bg-white rounded-lg shadow-lg max-w-md w-full animate-in zoom-in-95 fade-in-0 duration-200">
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

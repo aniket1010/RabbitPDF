@@ -112,6 +112,8 @@ async function batchUpsertEmbeddings(vectorDataArray) {
                 chunkId: item.id,
                 conversationId: item.conversationId,
                 pageNumber: item.pageNumber || 1,
+                pageType: item.pageType || 'content',
+                tocConfidence: item.tocConfidence || 0,
                 pagePosition: item.pagePosition || 0,
                 // Enhanced metadata for better reference accuracy
                 positionType: item.positionType || 'fallback',

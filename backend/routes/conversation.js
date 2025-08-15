@@ -70,19 +70,22 @@ router.get('/:conversationId/details', async (req, res) => {
   }
 });
 
-router.delete('/:conversationId', async (req, res) => {
+router.delete('/:conversationId', verifyAuth, async (req, res) => {
     try {
         const { conversationId } = req.params;
 
-        // First, check if the conversation exists
-        const conversation = await prisma.conversation.findUnique({
-            where: { id: conversationId }
+        // First, check if the conversation exists and belongs to the user
+        const conversation = await prisma.conversation.findFirst({
+            where: { 
+                id: conversationId,
+                userId: req.userId // ← Security: Only user's conversations!
+            }
         });
 
         if (!conversation) {
             return res.status(404).json({
-                error: 'Conversation not found',
-                details: `No conversation exists with ID: ${conversationId}`
+                error: 'Conversation not found or access denied',
+                details: `No conversation exists with ID: ${conversationId} or you don't have access to it`
             });
         }
 
@@ -129,25 +132,28 @@ router.delete('/:conversationId', async (req, res) => {
     }
 });
 
-router.patch('/:conversationId/rename', async (req, res) => {
+router.patch('/:conversationId/rename', verifyAuth, async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { newTitle } = req.body;
 
-    // Validate input
+    // Validate inputI
     if (!newTitle || typeof newTitle !== 'string' || !newTitle.trim()) {
       return res.status(400).json({ error: 'Invalid or missing newTitle' });
     }
 
-    // First check if the conversation exists
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId }
+    // First check if the conversation exists and belongs to the user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
     });
 
     if (!conversation) {
       return res.status(404).json({
-        error: 'Conversation not found',
-        details: `No conversation exists with ID: ${conversationId}`
+        error: 'Conversation not found or access denied',
+        details: `No conversation exists with ID: ${conversationId} or you don't have access to it`
       });
     }
 
@@ -156,6 +162,32 @@ router.patch('/:conversationId/rename', async (req, res) => {
       where: { id: conversationId },
       data: { title: newTitle.trim() }
     });
+
+    // Emit WebSocket event for real-time update
+    const io = req.app.get('socketio');
+    console.log(`🔍 [Rename] Checking WebSocket instance:`, !!io);
+    console.log(`🔍 [Rename] User ID from req:`, req.userId);
+    
+    if (io) {
+      console.log(`📡 [Rename] Emitting conversationRenamed to user_${req.userId}:`, {
+        conversationId,
+        newTitle: newTitle.trim()
+      });
+      io.to(`user_${req.userId}`).emit('conversationRenamed', {
+        conversationId,
+        newTitle: newTitle.trim()
+      });
+      
+      // Also emit to all connected sockets for debugging
+      console.log(`📡 [Rename] Also broadcasting to all sockets for debugging`);
+      io.emit('conversationRenamed', {
+        conversationId,
+        newTitle: newTitle.trim(),
+        debug: true
+      });
+    } else {
+      console.log(`❌ [Rename] No WebSocket instance found`);
+    }
 
     res.json({ 
       message: 'Conversation renamed successfully', 
