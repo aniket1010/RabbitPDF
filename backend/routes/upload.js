@@ -4,8 +4,6 @@ const pdfParse = require('pdf-parse');
 const prisma = require('../prismaClient');
 const { getBatchEmbeddings } = require('../services/embedding');
 const { batchUpsertEmbeddings } = require('../services/pinecone');
-const { generatePDFSummary } = require('../services/pdfSummary');
-const { processSummaryContent } = require('../services/messageProcessor');
 const { validatePDF } = require('../middleware/validation');
 const { verifyAuth } = require('../utils/auth');
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
@@ -137,21 +135,14 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     }
     console.log(`📊 Extracted ${text.length.toLocaleString()} characters of text`);
 
-    // Generate summary in background
-    let summaryData = {};
-    let processedSummary = {};
-    try {
-      summaryData = await generatePDFSummary(text, originalName);
-      if (summaryData.summary) {
-        processedSummary = await processSummaryContent(summaryData);
-      }
-    } catch (error) {
-      console.error('❌ Failed to generate summary, proceeding without it:', error);
-    }
-
     // Create conversation immediately with user ID
     console.log('📋 [Upload] Creating conversation for user:', req.userId);
     console.log('📋 [Upload] User details:', { id: req.userId, email: req.userEmail, name: req.userName });
+    
+    // Validate required user information
+    if (!req.userId || !req.userEmail) {
+      throw new Error('Missing required user information from authentication token');
+    }
     
     // First, ensure the user exists in the database
     let user = await prisma.user.findUnique({
@@ -167,56 +158,58 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
         user = await prisma.user.create({
           data: {
             id: req.userId,
-            email: req.userEmail || `user-${req.userId}@example.com`,
-            name: req.userName || 'Anonymous User',
+            email: req.userEmail,
+            name: req.userName || 'User',
             emailVerified: new Date(), // Mark as verified since they signed in via OAuth
           }
         });
         console.log('✅ [Upload] User created successfully:', user.email);
       } catch (userCreateError) {
+        console.error('❌ [Upload] Failed to create user:', userCreateError);
+        console.error('❌ [Upload] Error details:', {
+          code: userCreateError.code,
+          meta: userCreateError.meta,
+          message: userCreateError.message
+        });
+        
         // Handle unique constraint error on email
         if (userCreateError.code === 'P2002' && userCreateError.meta?.target?.includes('email')) {
           console.log('📧 [Upload] User with this email already exists, fetching existing user');
-          // Try to find user by email since that's what's causing the conflict
-          const email = req.userEmail || `user-${req.userId}@example.com`;
           user = await prisma.user.findUnique({
-            where: { email: email }
+            where: { email: req.userEmail }
           });
           
           if (user) {
             console.log('✅ [Upload] Found existing user by email:', user.email);
           } else {
             console.error('❌ [Upload] Could not find user by email after constraint error');
-            throw userCreateError;
+            throw new Error('User creation failed due to email conflict, but user not found');
           }
         } else {
-          console.error('❌ [Upload] Failed to create user:', userCreateError);
-          throw userCreateError;
+          throw new Error(`Failed to create user: ${userCreateError.message}`);
         }
       }
     }
     
+    // Ensure we have a valid user before proceeding
+    if (!user || !user.id) {
+      throw new Error('Failed to create or find user in database');
+    }
+    
     try {
-      console.log('📋 [Upload] Creating conversation with userId:', req.userId);
+      console.log('📋 [Upload] Creating conversation with userId:', user.id);
       conversation = await prisma.conversation.create({
         data: {
           title: originalName,
           fileName: originalName,
           filePath: filePath,
-          userId: req.userId, // ← Link conversation to authenticated user
-          summary: summaryData.summary || 'Processing PDF...',
-          summaryFormatted: processedSummary.summaryFormatted || null,
-          commonQuestions: summaryData.commonQuestions || null,
-          commonQuestionsFormatted: processedSummary.commonQuestionsFormatted || null,
-          summaryContentType: processedSummary.summaryContentType || 'text',
-          summaryGeneratedAt: summaryData.summary ? new Date() : null,
-          summaryProcessedAt: processedSummary.summaryProcessedAt || null,
+          userId: user.id, // ← Use the actual user ID from the database
           processingStatus: 'pending'
         }
       });
     } catch (conversationError) {
       console.error('❌ [Upload] Failed to create conversation:', conversationError);
-      console.error('❌ [Upload] User ID that failed:', req.userId);
+      console.error('❌ [Upload] User ID that failed:', user.id);
       console.error('❌ [Upload] User exists in DB:', !!user);
       throw conversationError;
     }
@@ -238,8 +231,7 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: { 
-            processingStatus: 'failed',
-            summary: 'Processing failed. Please try again.'
+            processingStatus: 'failed'
           }
         });
       } catch (updateError) {
@@ -308,6 +300,10 @@ async function processPdfInBackground(text, conversationId, originalName) {
         console.log(`✅ [${conversationId}] Background processing completed successfully`);
         console.log(`📊 [${conversationId}] Final stats: ${chunks.length} chunks, ${embeddingResults.length} embeddings, ${vectorDataArray.length} vectors`);
         
+        // Emit WebSocket event: PDF processing complete
+        const { MessageEvents } = require('../websocket');
+        MessageEvents.PDF_PROCESSING_COMPLETE(conversationId);
+        
         // Process any pending messages
         await processPendingMessages(conversationId);
         
@@ -328,8 +324,7 @@ async function processPdfInBackground(text, conversationId, originalName) {
             await prisma.conversation.update({
                 where: { id: conversationId },
                 data: { 
-                    processingStatus: 'failed',
-                    summary: 'Processing failed. Please try again.'
+                    processingStatus: 'failed'
                 }
             });
         } catch (updateError) {
@@ -356,7 +351,13 @@ async function processPendingMessages(conversationId) {
 
         for (const message of pendingMessages) {
             try {
-                await processAndRespondToMessage(message);
+                console.log(`📝 [${conversationId}] Processing pending message: ${message.id} - "${message.text}"`);
+                const assistantMessage = await processAndRespondToMessage(message);
+                if (assistantMessage) {
+                    console.log(`✅ [${conversationId}] Successfully processed pending message ${message.id}, created assistant message ${assistantMessage.id}`);
+                } else {
+                    console.log(`❌ [${conversationId}] Failed to create assistant response for pending message ${message.id}`);
+                }
             } catch (error) {
                 console.error(`❌ [${conversationId}] Error processing pending message ${message.id}:`, error);
                 // Mark message as error
@@ -365,6 +366,10 @@ async function processPendingMessages(conversationId) {
                     data: { status: 'error', error: error.message }
                 });
             }
+        }
+        
+        if (pendingMessages.length > 0) {
+            console.log(`✅ [${conversationId}] Finished processing ${pendingMessages.length} pending messages`);
         }
     } catch (error) {
         console.error(`❌ [${conversationId}] Error processing pending messages:`, error);

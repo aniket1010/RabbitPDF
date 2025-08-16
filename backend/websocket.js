@@ -130,8 +130,18 @@ function initializeWebSocket(server) {
 // Event emitters for message processing
 const emitToConversation = (conversationId, event, data) => {
   if (io) {
-    io.to(`conversation-${conversationId}`).emit(event, data);
-    console.log(`📡 [WebSocket] Emitted ${event} to conversation ${conversationId}:`, data);
+    const room = `conversation-${conversationId}`;
+    const clientsInRoom = io.sockets.adapter.rooms.get(room);
+    const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+    
+    console.log(`📡 [WebSocket] Emitting ${event} to conversation ${conversationId} (${clientCount} clients in room):`, data);
+    io.to(room).emit(event, data);
+    
+    if (clientCount === 0) {
+      console.warn(`⚠️ [WebSocket] No clients in room ${room} to receive ${event} event`);
+    }
+  } else {
+    console.error(`❌ [WebSocket] Cannot emit ${event} - WebSocket server not initialized`);
   }
 };
 
@@ -156,9 +166,9 @@ const MessageEvents = {
   },
 
   // When AI response is complete
-  AI_RESPONSE_COMPLETE: (conversationId, messageId, assistantMessage) => {
+  AI_RESPONSE_COMPLETE: (conversationId, userMessageId, assistantMessage) => {
     emitToConversation(conversationId, 'ai-response-complete', { 
-      messageId,
+      userMessageId,
       assistantMessage: {
         id: assistantMessage.id,
         text: assistantMessage.formattedText || assistantMessage.text,

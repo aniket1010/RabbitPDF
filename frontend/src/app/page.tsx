@@ -3,11 +3,21 @@
 import { useState } from 'react';
 import { Menu, X, Upload, FileText, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import AuthButton from '@/components/AuthButton';
 
 export default function HomePage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
   
   const handleUploadClick = () => {
+    // Check if user is authenticated
+    if (!session?.user) {
+      // Show sign-in prompt or redirect to sign-in
+      alert('Please sign in to upload PDFs and start chatting with your documents.');
+      return;
+    }
+
     // Create a hidden file input element
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -50,6 +60,13 @@ export default function HomePage() {
   return (
     <div className="flex items-center justify-center h-full bg-gradient-to-br from-[#F9F4EB] via-white to-[#FCDCA6]/20 p-6">
       <div className="text-center max-w-lg w-full animate-fade-in">
+        {/* Authentication Section */}
+        {status !== 'loading' && (
+          <div className="absolute top-6 right-6">
+            <AuthButton />
+          </div>
+        )}
+
         {/* Hero Icon */}
         <div className="w-24 h-24 mx-auto mb-8 bg-gradient-to-br from-pink-200 to-amber-200 rounded-3xl flex items-center justify-center shadow-lg">
           <div className="relative">
@@ -105,11 +122,14 @@ export default function HomePage() {
             className="w-full btn-primary py-4 px-8 rounded-xl text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 group"
           >
             <Upload className="w-5 h-5 mr-3 inline transition-transform duration-200 group-hover:scale-110" />
-            Upload New PDF
+            {session?.user ? 'Upload New PDF' : 'Sign In to Upload PDF'}
           </button>
           
           <p className="text-sm text-gray-500">
-            Get started by uploading a PDF document and asking questions about it
+            {session?.user 
+              ? 'Get started by uploading a PDF document and asking questions about it'
+              : 'Sign in to upload PDF documents and start chatting with them using AI'
+            }
           </p>
         </div>
 

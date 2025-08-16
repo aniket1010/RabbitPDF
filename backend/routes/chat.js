@@ -172,6 +172,48 @@ router.post('/:conversationId', verifyAuth, async (req, res) => {
   }
 });
 
+// Diagnostic endpoint for pending messages
+router.get('/:conversationId/pending', verifyAuth, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    // Check if conversation exists and belongs to user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found or access denied' });
+    }
+
+    const pendingMessages = await prisma.message.findMany({
+      where: {
+        conversationId: conversationId,
+        status: 'pending',
+        role: 'user'
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    res.json({
+      conversationStatus: conversation.processingStatus,
+      pendingCount: pendingMessages.length,
+      pendingMessages: pendingMessages.map(msg => ({
+        id: msg.id,
+        text: msg.text,
+        status: msg.status,
+        createdAt: msg.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching pending messages:', error);
+    res.status(500).json({ error: 'Error fetching pending messages' });
+  }
+});
+
 // Diagnostic endpoint to check reference availability
 router.get('/:conversationId/debug-references', verifyAuth, async (req, res) => {
   try {

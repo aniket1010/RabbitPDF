@@ -56,13 +56,6 @@ model Conversation {
   title     String
   fileName  String
   filePath  String
-  summary   String?   // AI-generated summary of the document
-  summaryFormatted String? // Formatted summary (HTML)
-  commonQuestions String? // 3 most common questions users can ask about this PDF
-  commonQuestionsFormatted String? // Formatted common questions (HTML)
-  summaryContentType String @default("text") // Content type for summary fields
-  summaryGeneratedAt DateTime? // When summary was generated
-  summaryProcessedAt DateTime? // When summary was processed/formatted
   processingStatus String @default("pending") // "pending", "processing", "completed", "failed"
   createdAt DateTime  @default(now())
   messages  Message[]

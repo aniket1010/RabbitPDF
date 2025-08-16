@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { PanelLeft, PanelRight, Plus, FileText, MessageSquare, Edit, Trash2, Settings } from 'lucide-react'
+import { PanelLeft, PanelRight, Plus, FileText, MessageSquare, Edit, Trash2, Settings, LogIn, LogOut, User } from 'lucide-react'
 import { useRouter, usePathname } from "next/navigation"
 import { getConversations, deleteConversation, renameConversation } from "@/services/api"
 import ImprovedRenameDialog from "./RenameDialog"
@@ -13,7 +13,6 @@ import ImprovedDeleteDialog from "./DeleteConfirmDialog"
 import SettingsDialog from "./SettingsDialog"
 import { stripPdfExtension } from '@/lib/utils';
 import { useSession, signIn, signOut } from 'next-auth/react';
-import { LogIn, LogOut, User } from 'lucide-react';
 import Image from 'next/image';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -67,15 +66,14 @@ function CollapsedUserSection({
         <button 
           onClick={onSettingsClick}
           className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
-          title={userName || 'Settings'}
+          title="Settings"
           aria-label="Settings"
         >
           <Settings className="h-3.5 w-3.5" />
         </button>
-        
         {/* Sign Out Icon */}
         <button 
-          onClick={() => signOut()}
+          onClick={() => signOut({ callbackUrl: '/' })}
           className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
           title="Sign Out"
           aria-label="Sign Out"
@@ -88,21 +86,11 @@ function CollapsedUserSection({
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {/* Settings Icon */}
+      {/* Sign In Icon for guests */}
       <button 
-        onClick={onSettingsClick}
-        className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
-        title="Settings"
-        aria-label="Settings"
-      >
-        <Settings className="h-3.5 w-3.5" />
-      </button>
-      
-      {/* Sign In Icon */}
-      <button 
-        onClick={() => signIn()}
-        className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
-        title="Sign In"
+        onClick={() => window.location.href = '/'}
+        className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black"
+        title="Sign in to chat with PDFs"
         aria-label="Sign In"
       >
         <LogIn className="h-3.5 w-3.5" />
@@ -169,7 +157,9 @@ function UserSection({
           </div>
           <button 
             onClick={onSettingsClick}
-            className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70 flex-shrink-0"
+            className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+            title="Settings"
+            aria-label="Settings"
           >
             <Settings className="h-3.5 w-3.5" />
           </button>
@@ -179,7 +169,7 @@ function UserSection({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut()}
+          onClick={() => signOut({ callbackUrl: '/' })}
           className="w-full flex items-center gap-2 h-8 text-xs border-black/20 hover:bg-black hover:text-white transition-all duration-200 ease-out"
         >
           <LogOut className="h-3 w-3" />
@@ -200,22 +190,15 @@ function UserSection({
           <p className="text-sm font-medium text-black truncate">Guest User</p>
           <p className="text-xs text-black/50 truncate">Not signed in</p>
         </div>
-        <button 
-          onClick={onSettingsClick}
-          className="p-1.5 rounded-md hover:bg-black/5 transition-all duration-200 ease-out text-black/40 hover:text-black/70"
+        <Button
+          onClick={() => signIn()}
+          size="sm"
+          className="flex items-center gap-2 h-8 text-xs bg-black hover:bg-black/90 text-white transition-all duration-200 ease-out flex-shrink-0"
         >
-          <Settings className="h-3.5 w-3.5" />
-        </button>
+          <LogIn className="h-3 w-3" />
+          Sign In
+        </Button>
       </div>
-      
-      {/* Sign In Button */}
-      <Button
-        onClick={() => signIn()}
-        className="w-full flex items-center gap-2 h-8 text-xs bg-black hover:bg-black/90 text-white transition-all duration-200 ease-out"
-      >
-        <LogIn className="h-3 w-3" />
-        Sign In
-      </Button>
     </div>
   );
 }
@@ -292,17 +275,31 @@ export default function Sidebar({
     (urlConversationId && conversations.some(conv => conv.id === urlConversationId) ? urlConversationId : null)
 
   useEffect(() => {
-    loadConversations()
-  }, [])
+    // Only load conversations if user is signed in
+    if (session?.user) {
+      loadConversations()
+    } else {
+      // For guest users, clear conversations and set loading to false
+      setConversations([])
+      setLoading(false)
+    }
+  }, [session?.user])
 
-  // Redirect to home if user is on an invalid conversation URL
+  // Redirect to home if user is on an invalid conversation URL or if signed out
   useEffect(() => {
-    // Only check after conversations have loaded (not during loading state)
-    if (!loading && urlConversationId && !conversations.some(conv => conv.id === urlConversationId)) {
+    // If user is signed out and on a conversation page, redirect to home
+    if (!session?.user && urlConversationId) {
+      console.log('🔄 [Sidebar] Redirecting signed-out user to home from conversation page');
+      router.push('/');
+      return;
+    }
+    
+    // Only check after conversations have loaded (not during loading state) and user is signed in
+    if (!loading && session?.user && urlConversationId && !conversations.some(conv => conv.id === urlConversationId)) {
       console.log('🔄 [Sidebar] Redirecting to home - conversation not found:', urlConversationId);
       router.push('/');
     }
-  }, [loading, urlConversationId, conversations, router]);
+  }, [loading, urlConversationId, conversations, router, session?.user]);
 
   // Set up WebSocket listener for conversation renames
   useEffect(() => {
@@ -347,6 +344,13 @@ export default function Sidebar({
   }, [onUserProfileUpdated]);
 
   const loadConversations = async () => {
+    // Don't load conversations if user is not signed in
+    if (!session?.user) {
+      setConversations([])
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       setError(null)
@@ -369,6 +373,12 @@ export default function Sidebar({
   }
 
   const handleNewChat = () => {
+    // If user is not signed in, redirect to sign in
+    if (!session?.user) {
+      signIn()
+      return
+    }
+
     // Create a hidden file input element
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -587,20 +597,24 @@ export default function Sidebar({
             transitionDelay: isExpanded ? "0.1s" : "0s",
           }}
         >
-          {/* New Chat Button */}
-          <div className="p-6 pb-4 flex-shrink-0">
-            <Button
-              onClick={handleNewChat}
-              className="w-full bg-black hover:bg-black/90 text-white h-11 rounded-xl font-medium transition-all duration-200 ease-out hover:shadow-md transform hover:translate-y-[-1px] active:translate-y-0"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Chat
-            </Button>
-          </div>
+          {/* New Chat Button - Only for signed-in users */}
+          {session?.user && (
+            <div className="p-6 pb-4 flex-shrink-0">
+              <Button
+                onClick={handleNewChat}
+                className="w-full h-11 rounded-xl font-medium transition-all duration-200 ease-out hover:shadow-md transform hover:translate-y-[-1px] active:translate-y-0 bg-black hover:bg-black/90 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Chat
+              </Button>
+            </div>
+          )}
 
           {/* Recent Chats Header */}
-          <div className="px-6 pb-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold text-black/80">Recent Chats</h2>
+          <div className="px-6 pt-6 pb-6 flex-shrink-0 border-t border-black/10">
+            <h2 className="text-sm font-semibold text-black/80">
+              {session?.user ? "Recent Chats" : "Your Chats"}
+            </h2>
           </div>
 
           {/* Conversations List - Fixed height with scroll */}
@@ -651,20 +665,20 @@ export default function Sidebar({
                           <h3 className="font-medium text-black text-sm truncate mb-1">{stripPdfExtension(conversation.title)}</h3>
                           <p className="text-xs text-black/60">{formatDate(conversation.createdAt)}</p>
                         </button>
-                        <div className="flex items-center gap-1 flex-shrink-0">
+                       <div className="flex items-center gap-0.5 flex-shrink-0">
                           <button
-                            className="p-1.5 rounded-md hover:bg-black/10 transition-all duration-200 ease-out text-black/40 hover:text-black/70 opacity-60 hover:opacity-100"
+                            className="p-1.5 rounded-md hover:bg-black/10 transition-all duration-200 ease-out text-black/60 hover:text-black/90"
                             onClick={(e) => handleRenameClick(conversation, e)}
                             title="Rename conversation"
                           >
-                            <Edit className="h-3.5 w-3.5" />
+                            <Edit className="h-4 w-4" />
                           </button>
                           <button
-                            className="p-1.5 rounded-md hover:bg-red-50 transition-all duration-200 ease-out text-black/40 hover:text-red-600 opacity-60 hover:opacity-100"
+                            className="p-1.5 rounded-md hover:bg-red-50 transition-all duration-200 ease-out text-black/60 hover:text-red-600"
                             onClick={(e) => handleDeleteClick(conversation, e)}
                             title="Delete conversation"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
@@ -675,8 +689,25 @@ export default function Sidebar({
                     <div className="w-12 h-12 bg-black/5 rounded-full flex items-center justify-center mx-auto mb-4">
                       <MessageSquare className="h-6 w-6 text-black/30" />
                     </div>
-                    <p className="text-sm font-medium text-black/60 mb-1">No conversations yet</p>
-                    <p className="text-xs text-black/40">Upload a PDF to get started</p>
+                    {session?.user ? (
+                      <>
+                        <p className="text-sm font-medium text-black/60 mb-1">No conversations yet</p>
+                        <p className="text-xs text-black/40">Upload a PDF to get started</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-medium text-black/60 mb-1">Sign in to view chats</p>
+                        <p className="text-xs text-black/40">Your conversations will appear here</p>
+                        <Button
+                          onClick={() => signIn()}
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-black/20 hover:bg-black hover:text-white transition-all duration-200 ease-out bg-transparent"
+                        >
+                          Sign In to Start
+                        </Button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -694,22 +725,14 @@ export default function Sidebar({
             transitionDelay: isExpanded ? "0s" : "0.1s",
           }}
         >
-          {/* Collapsed New Chat Button */}
-          <div className="p-3 pt-6 flex-shrink-0">
-            <button
-              onClick={handleNewChat}
-              className="w-10 h-10 bg-black hover:bg-black/90 text-white rounded-lg transition-all duration-200 ease-out flex items-center justify-center hover:shadow-md transform hover:translate-y-[-1px] active:translate-y-0"
-              aria-label="New chat"
-            >
-              <Plus className="h-5 w-5" />
-            </button>
-          </div>
-
           {/* Collapsed Conversations - Fixed height with scroll */}
-          <div className="flex-1 min-h-0 p-3">
+          <div className="flex-1 min-h-0 p-3 pt-6">
             <ScrollArea className="h-full [&_.scrollbar]:bg-black/10 [&_.scrollbar]:hover:bg-black/20 [&_.scrollbar-thumb]:bg-black/30 [&_.scrollbar-thumb]:hover:bg-black/50">
               <div className="space-y-2">
-                {loading ? (
+                {!session?.user ? (
+                  // Guest user - no visual indicator in collapsed view
+                  null
+                ) : loading ? (
                   Array.from({ length: 4 }).map((_, index) => (
                     <div
                       key={index}

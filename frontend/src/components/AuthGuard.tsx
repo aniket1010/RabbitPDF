@@ -1,7 +1,8 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import AuthButton from './AuthButton';
 
 interface AuthGuardProps {
@@ -11,6 +12,14 @@ interface AuthGuardProps {
 
 export default function AuthGuard({ children, fallback }: AuthGuardProps) {
   const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    // If not authenticated and not loading, redirect to home
+    if (status !== 'loading' && !session?.user) {
+      router.push('/');
+    }
+  }, [session, status, router]);
 
   if (status === 'loading') {
     return (
@@ -24,24 +33,8 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
   }
 
   if (!session?.user) {
-    return fallback || (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full mx-4">
-          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">
-              Welcome to ChatPDF
-            </h1>
-            <p className="text-gray-600 mb-6">
-              Sign in to upload PDFs and start chatting with your documents
-            </p>
-            <AuthButton />
-            <div className="mt-6 text-sm text-gray-500">
-              <p>Choose from Google, GitHub, or Email authentication</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    // Return null while redirecting to prevent flash of fallback content
+    return null;
   }
 
   return <>{children}</>;

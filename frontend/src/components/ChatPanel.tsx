@@ -2,9 +2,9 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Send, Bot, User, Sparkles, Menu, FileText } from "lucide-react"
+import { Send, Bot, User, Menu, File } from "lucide-react"
 
-import { getConversationMessages, sendChatMessage, getConversationSummary } from "@/services/api"
+import { getConversationMessages, sendChatMessage } from "@/services/api"
 import HtmlRenderer from "./HtmlRenderer"
 import { stripPdfExtension } from "@/lib/utils"
 import { useWebSocket } from "@/hooks/useWebSocket"
@@ -49,11 +49,6 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const httpAssistantFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [summaryData, setSummaryData] = useState<{ summary: string; commonQuestions: string[] }>({
-    summary: "",
-    commonQuestions: [],
-  })
-  const [showSummary, setShowSummary] = useState(false)
   
   // WebSocket hook
   const { socket, isConnected, joinConversation, leaveConversation, onConversationRenamed } = useWebSocket()
@@ -86,8 +81,21 @@ export default function ChatPanel({
 
     console.log(`🔌 [WebSocket] Setting up event listeners for conversation ${conversationId}`)
 
-    // Join the conversation room
-    joinConversation(conversationId)
+    // Wait for socket to be connected before joining conversation
+    const setupConversation = () => {
+      if (socket.connected) {
+        console.log(`🔌 [WebSocket] Socket connected, joining conversation ${conversationId}`)
+        joinConversation(conversationId)
+      } else {
+        console.log(`🔌 [WebSocket] Socket not connected yet, waiting...`)
+        socket.once('connect', () => {
+          console.log(`🔌 [WebSocket] Socket connected, now joining conversation ${conversationId}`)
+          joinConversation(conversationId)
+        })
+      }
+    }
+
+    setupConversation()
 
     // Listen for processing events
     const handleProcessingStarted = (data: any) => {
@@ -102,7 +110,7 @@ export default function ChatPanel({
 
     const handleAIResponseComplete = (data: any) => {
       console.log('✅ [WebSocket] AI response complete:', data)
-      setIsAnalyzing(false)
+      
       // Cancel any HTTP fallback timer if it exists
       if (httpAssistantFallbackRef.current) {
         clearTimeout(httpAssistantFallbackRef.current)
@@ -118,7 +126,38 @@ export default function ChatPanel({
       
       setMessages(prev => {
         const exists = prev.some(m => m.id === assistantMessage.id)
-        return exists ? prev : [...prev, assistantMessage]
+        if (exists) return prev
+        
+        // Update the specific user message that was processed (if userMessageId is provided)
+        const updatedMessages = data.userMessageId 
+          ? prev.map(msg => {
+              if (msg.id === data.userMessageId && msg.status === 'pending') {
+                console.log(`🔄 [WebSocket] Updating user message ${msg.id} from pending to completed`)
+                return { ...msg, status: 'completed' as const }
+              }
+              return msg
+            })
+          : prev.map(msg => {
+              // Fallback: update any pending user message
+              if (msg.status === 'pending' && msg.isUser) {
+                console.log(`🔄 [WebSocket] Updating pending user message ${msg.id} to completed`)
+                return { ...msg, status: 'completed' as const }
+              }
+              return msg
+            })
+        
+        const newMessages = [...updatedMessages, assistantMessage]
+        
+        // Only stop analyzing if there are no more pending messages
+        const stillHasPending = newMessages.some(msg => msg.status === 'pending')
+        if (!stillHasPending) {
+          console.log('🔄 [WebSocket] No more pending messages, stopping analysis indicator')
+          setIsAnalyzing(false)
+        } else {
+          console.log(`🔄 [WebSocket] Still have ${newMessages.filter(msg => msg.status === 'pending').length} pending messages, keeping analysis indicator`)
+        }
+        
+        return newMessages
       })
     }
 
@@ -150,9 +189,31 @@ export default function ChatPanel({
 
     const handlePDFProcessingComplete = (data: any) => {
       console.log('✅ [WebSocket] PDF processing complete')
+      
+      // Check if we have pending messages that will now be processed
+      const pendingCount = messages.filter(m => m.status === 'pending').length
+      if (pendingCount > 0) {
+        console.log(`🔄 [WebSocket] PDF processing complete, ${pendingCount} pending messages will be processed`)
+        setIsAnalyzing(true) // Keep the loader going for pending message processing
+      }
+      
+      // Refresh messages to get any newly processed pending messages
+      loadMessages()
+    }
+
+    const handlePendingMessagesProcessed = (data: any) => {
+      console.log('✅ [WebSocket] Pending messages processed:', data)
+      // Individual ai-response-complete events should handle the updates
+    }
+
+    const handleJoinedConversation = (data: any) => {
+      console.log('🏠 [WebSocket] Successfully joined conversation:', data.conversationId)
+      // Load messages when we successfully join the conversation
+      loadMessages()
     }
 
     // Attach event listeners
+    socket.on('joined-conversation', handleJoinedConversation)
     socket.on('message-processing-started', handleProcessingStarted)
     socket.on('ai-thinking', handleAIThinking)
     socket.on('ai-response-complete', handleAIResponseComplete)
@@ -160,12 +221,14 @@ export default function ChatPanel({
     socket.on('user-message-update', handleUserMessageUpdate)
     socket.on('pdf-processing-progress', handlePDFProcessingProgress)
     socket.on('pdf-processing-complete', handlePDFProcessingComplete)
+    socket.on('pending-messages-processed', handlePendingMessagesProcessed)
 
     // Cleanup function
     return () => {
       console.log(`🔌 [WebSocket] Cleaning up event listeners for conversation ${conversationId}`)
       leaveConversation(conversationId)
       
+      socket.off('joined-conversation', handleJoinedConversation)
       socket.off('message-processing-started', handleProcessingStarted)
       socket.off('ai-thinking', handleAIThinking)  
       socket.off('ai-response-complete', handleAIResponseComplete)
@@ -173,45 +236,13 @@ export default function ChatPanel({
       socket.off('user-message-update', handleUserMessageUpdate)
       socket.off('pdf-processing-progress', handlePDFProcessingProgress)
       socket.off('pdf-processing-complete', handlePDFProcessingComplete)
+      socket.off('pending-messages-processed', handlePendingMessagesProcessed)
       if (httpAssistantFallbackRef.current) {
         clearTimeout(httpAssistantFallbackRef.current)
         httpAssistantFallbackRef.current = null
       }
     }
   }, [socket, conversationId, joinConversation, leaveConversation])
-
-  useEffect(() => {
-    async function fetchSummary() {
-      try {
-        console.log('Fetching summary for conversation:', conversationId)
-        const data = await getConversationSummary(conversationId)
-        console.log('Summary data received:', data)
-        if (data) {
-          let questions: string[] = []
-          if (data.commonQuestions) {
-            const liMatches = Array.from(data.commonQuestions.matchAll(/<li[^>]*>(.*?)<\/li>/gi))
-            if (liMatches.length > 0) {
-              questions = liMatches.map((m: any) => m[1].replace(/<[^>]+>/g, "").trim())
-            } else {
-              questions = (
-                Array.isArray(data.commonQuestions) ? data.commonQuestions : data.commonQuestions.split("\n")
-              )
-                .map((q: string) => q.replace(/^[-•*]\s*/, "").trim())
-                .filter((q: string) => q.length > 0)
-            }
-          }
-          console.log('Processed summary data:', { summary: data.summary || "", commonQuestions: questions })
-          setSummaryData({ summary: data.summary || "", commonQuestions: questions })
-        } else {
-          console.error("API did not return summary data.")
-        }
-      } catch (err) {
-        console.error('Error fetching summary:', err)
-        // Ignore summary errors for now
-      }
-    }
-    fetchSummary()
-  }, [conversationId])
 
   // Connection status indicator
   useEffect(() => {
@@ -366,24 +397,6 @@ export default function ChatPanel({
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px"
   }
 
-  const handleShowSummary = () => {
-    setShowSummary(true)
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `summary-${Date.now()}`,
-        text: summaryData.summary,
-        isUser: false,
-        timestamp: new Date(),
-        contentType: "html",
-      },
-    ])
-  }
-
-  const handleKeyQuestion = (question: string) => {
-    handleSendMessage(question)
-  }
-
   return (
     <div
       className="w-full h-full flex flex-col bg-white"
@@ -413,11 +426,16 @@ export default function ChatPanel({
             <div>
                           <div className="flex items-center gap-2">
               <h3 className="text-xs font-semibold text-black/60 uppercase tracking-wider">AI Assistant</h3>
-              <Sparkles className="w-3 h-3 text-black/40" />
               {isConnected ? (
                 <div className="w-2 h-2 bg-green-400 rounded-full" title="WebSocket connected - real-time updates" />
               ) : (
                 <div className="w-2 h-2 bg-yellow-400 rounded-full" title="WebSocket disconnected - manual refresh needed" />
+              )}
+              {/* Show pending message indicator */}
+              {messages.filter(m => m.status === 'pending').length > 0 && (
+                <div className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">
+                  {messages.filter(m => m.status === 'pending').length} pending
+                </div>
               )}
             </div>
               <h2 className="text-lg sm:text-xl font-bold text-black truncate">
@@ -430,7 +448,7 @@ export default function ChatPanel({
               onClick={onViewPDF}
               className="flex items-center gap-2 px-4 py-2 btn-secondary rounded-xl hover:shadow-md transition-all duration-200 group"
             >
-              <FileText className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
+              <File className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
               <span className="text-sm font-medium">View PDF</span>
             </button>
           )}
@@ -468,54 +486,6 @@ export default function ChatPanel({
           </div>
         ) : (
           <>
-            {/* Summary and Questions Section */}
-            {messages.length === 0 && summaryData.summary && (
-              <div className="space-y-6 animate-fade-in">
-                {/* Summary Button */}
-                {summaryData.summary && (
-                  <div className="flex justify-center">
-                    <button
-                      onClick={handleShowSummary}
-                      className="px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-2xl font-semibold hover:shadow-lg transition-all duration-200 shadow-md max-w-md w-full"
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <FileText className="w-5 h-5" />
-                        <span>View Document Summary</span>
-                      </div>
-                    </button>
-                  </div>
-                )}
-
-                {/* Key Questions Grid */}
-                {summaryData.commonQuestions.length > 0 && (
-                  <div className="space-y-4">
-                    <h3 className="text-center text-lg font-semibold text-gray-800 mb-4">
-                      Key Questions You Can Ask
-                    </h3>
-                    <div className="grid grid-cols-1 gap-3 sm:gap-4 max-w-2xl mx-auto">
-                      {summaryData.commonQuestions.slice(0, 3).map((question, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleKeyQuestion(question)}
-                          className="group relative w-full px-5 py-4 bg-white/95 border border-black/10 rounded-2xl text-left transition-all duration-200 text-[15px] sm:text-base font-semibold text-black/80 shadow-sm hover:border-black/20 hover:bg-black/5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 active:scale-[0.99] min-h-[48px]"
-                          aria-label={`Ask: ${question}`}
-                        >
-                          <span className="flex items-start gap-3">
-                            <span className="mt-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-xl bg-black/90 text-white shadow-sm group-hover:scale-105 group-hover:shadow transition-transform">
-                              <Sparkles className="h-3.5 w-3.5" />
-                            </span>
-                            <span className="leading-6 tracking-normal break-words">
-                              {question}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             {messages.map((message) => (
               <div
                 key={message.id}

@@ -18,6 +18,9 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
     }),
   ],
+  pages: {
+    signOut: '/', // Only redirect to home page after sign-out
+  },
   session: {
     strategy: 'jwt',
     maxAge: 60 * 5, // 5 minutes for testing

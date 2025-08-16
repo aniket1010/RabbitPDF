@@ -20,21 +20,11 @@ async function verifyAuth(req, res, next) {
     });
     
     if (!token) {
-      console.log('🔍 [Auth] No valid token found, checking bypass conditions:', {
-        nodeEnv: process.env.NODE_ENV,
-        isNotProduction: process.env.NODE_ENV !== 'production'
+      console.log('❌ [Auth] No valid authentication token found');
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        message: 'Please sign in to access this resource'
       });
-      
-      if (process.env.NODE_ENV !== 'production') {
-        // DEV BYPASS: allow requests without authentication in development
-        console.warn('✅ [Auth] DEV BYPASS ACTIVATED - No session token, allowing request');
-        req.userId = 'dev-user';
-        req.userEmail = 'dev@example.com';
-        req.userName = 'Developer';
-        return next();
-      }
-      console.log('❌ [Auth] No session token found, NODE_ENV is production');
-      return res.status(401).json({ error: 'Authentication required' });
     }
 
     // Extract user information from the verified NextAuth token
@@ -90,16 +80,11 @@ async function verifyAuthSocket(req) {
     });
     
     if (!token) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn('⚠️ [Auth] No WebSocket token – DEV bypass active');
-        return {
-          authenticated: true,
-          userId: 'dev-user',
-          userEmail: 'dev@example.com',
-          userName: 'Developer'
-        };
-      }
-      return { authenticated: false, error: 'No session token found' };
+      console.log('❌ [Auth] No WebSocket authentication token found');
+      return { 
+        authenticated: false, 
+        error: 'Authentication required for WebSocket connection' 
+      };
     }
 
     // Return user information from verified NextAuth token

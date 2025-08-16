@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/components';
 import { getConversationDetails } from '@/services/api';
+import AuthGuard from '@/components/AuthGuard';
 
 interface ConversationDetails {
   id: string;
@@ -100,9 +101,11 @@ export default function ConversationPage({ params }: PageProps) {
   }
 
   return (
-    <MainLayout
-      filePath={conversationDetails.filePath}
-      conversationId={conversationDetails.id}
-    />
+    <AuthGuard>
+      <MainLayout
+        filePath={conversationDetails.filePath}
+        conversationId={conversationDetails.id}
+      />
+    </AuthGuard>
   );
 }

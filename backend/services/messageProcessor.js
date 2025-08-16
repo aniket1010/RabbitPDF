@@ -112,29 +112,6 @@ async function processMessageContent(content, role = 'assistant') {
   }
 }
 
-async function processSummaryContent(summaryData) {
-  try {
-    const processed = { ...summaryData };
-    
-    const fieldsToProcess = ['summary', 'commonQuestions'];
-    
-    for (const field of fieldsToProcess) {
-      if (processed[field]) {
-        const processedField = await processMessageContent(processed[field], 'assistant');
-        processed[`${field}Formatted`] = processedField.formatted;
-        processed[`${field}ContentType`] = processedField.contentType;
-      }
-    }
-    
-    processed.summaryProcessedAt = new Date();
-    return processed;
-    
-  } catch (error) {
-    console.error('Error processing summary content:', error);
-    return summaryData;
-  }
-}
-
 function cleanTextContent(text) {
   if (!text) return text;
   
@@ -374,7 +351,7 @@ async function processAndRespondToMessage(message) {
       data: { status: 'completed', error: null }
     });
 
-    // Emit WebSocket event: AI response complete
+    // Emit WebSocket event: AI response complete (includes user message update)
     MessageEvents.AI_RESPONSE_COMPLETE(message.conversationId, message.id, assistantMessage);
 
     console.log(`✅ [MessageProcessor] Successfully processed message ${message.id}`);
@@ -398,6 +375,5 @@ async function processAndRespondToMessage(message) {
 module.exports = { 
   processAndRespondToMessage, 
   processMessageContent, 
-  processSummaryContent,
   cleanTextContent, 
 };

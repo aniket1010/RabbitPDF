@@ -121,16 +121,6 @@ export async function sendChatMessage(conversationId: string, question: string) 
   return res.data;
 }
 
-export async function getConversationSummary(conversationId: string) {
-  const res = await api.get(`/conversation/${conversationId}/summary`);
-  return res.data;
-}
-
-export async function generateConversationSummary(conversationId: string) {
-  const res = await api.post(`/conversation/${conversationId}/summary/generate`);
-  return res.data;
-}
-
 export async function processPendingMessages(conversationId: string) {
   const res = await api.post(`/chat/${conversationId}/process-pending`);
   return res.data;
