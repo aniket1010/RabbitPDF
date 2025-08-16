@@ -1,217 +1,149 @@
-// WebSocket server for real-time communication
-const { Server } = require('socket.io');
-const { allowedOrigins } = require('./config/cors');
-const { verifyAuthSocket } = require('./utils/auth');
+// WebSocket utility functions and event handlers
 
-let io;
+const { verifyWebSocketAuth } = require('./utils/auth');
 
-function initializeWebSocket(server) {
-  io = new Server(server, {
-    cors: {
-      origin: function(origin, callback) {
-        // Allow requests with no origin (mobile apps, Postman, etc.)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.includes(origin.toLowerCase())) {
-          return callback(null, true);
-        }
-        
-        console.log(`❌ [WebSocket] CORS blocked origin: ${origin}`);
-        return callback(new Error('CORS not allowed'), false);
-      },
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      credentials: true,
-      allowedHeaders: ["Content-Type", "Authorization", "Cookie"]
-    },
-    allowEIO3: true,
-    transports: ['polling', 'websocket'], // Start with polling first
-    pingTimeout: 60000,
-    pingInterval: 25000,
-    upgradeTimeout: 30000,
-    allowUpgrades: true,
-    serveClient: false, // Don't serve client files
-    path: '/socket.io/'
-  });
+// Global IO instance - will be set when WebSocket is initialized
+let globalIO = null;
 
-  // Add connection debugging
-  io.engine.on("connection_error", (err) => {
-    console.error('❌ [WebSocket Engine] Connection error:', {
-      req: err.req ? `${err.req.method} ${err.req.url}` : 'no req',
-      code: err.code,
-      message: err.message,
-      context: err.context
-    });
-  });
-
-  // Use proper authentication to get real user ID
+// Setup WebSocket authentication and event handlers
+function setupWebSocket(io) {
+  // Store the IO instance globally for MessageEvents to use
+  globalIO = io;
+  
+  // Authentication middleware
   io.use(async (socket, next) => {
     try {
-      console.log(`🔌 [WebSocket] Connection attempt from: ${socket.handshake.address}`);
-      console.log(`🔌 [WebSocket] Headers:`, socket.handshake.headers);
+      console.log('🔌 [WebSocket] Connection attempt from:', socket.handshake.address);
       
-      const req = socket.request;
-      const authResult = await verifyAuthSocket(req);
+      const authResult = await verifyWebSocketAuth(socket);
       
       if (authResult.authenticated) {
         socket.userId = authResult.userId;
         socket.userEmail = authResult.userEmail;
-        console.log(`🔌 [WebSocket] User connected: ${authResult.userEmail} (${socket.id}) - User ID: ${authResult.userId}`);
+        socket.userName = authResult.userName;
         next();
       } else {
-        console.log(`❌ [WebSocket] Authentication failed for socket ${socket.id}`);
-        // For development, allow connection but use a fallback
-        socket.userId = 'dev-user';
-        socket.userEmail = 'dev@example.com';
-        console.log(`✅ [WebSocket] Development fallback connection: ${socket.id}`);
-        next();
+        if (process.env.NODE_ENV !== 'production') {
+          socket.userId = 'dev-user';
+          socket.userEmail = 'dev@example.com';
+          socket.userName = 'Developer';
+          next();
+        } else {
+          next(new Error('Authentication failed'));
+        }
       }
     } catch (error) {
       console.error('❌ [WebSocket] Auth error:', error);
-      // For development, allow connection but use a fallback
-      socket.userId = 'dev-user';
-      socket.userEmail = 'dev@example.com';
-      console.log(`✅ [WebSocket] Error fallback connection: ${socket.id}`);
-      next();
+      next(new Error('Authentication failed'));
     }
   });
 
+  // Connection handler
   io.on('connection', (socket) => {
-    console.log(`✅ [WebSocket] Client connected: ${socket.id} (User: ${socket.userEmail})`);
+    console.log(`✅ [WebSocket] Client connected: ${socket.id}`);
 
-    // Join user-specific room for personal notifications
-    socket.join(`user_${socket.userId}`);
-    console.log(`🏠 [WebSocket] ${socket.userEmail} joined user room: user_${socket.userId}`);
+    // Join user room
+    const userRoom = `user_${socket.userId}`;
+    socket.join(userRoom);
 
-    // Test connection handler
-    socket.on('test-connection', (data) => {
-      console.log(`🧪 [WebSocket] Test connection from ${socket.id}:`, data);
-      socket.emit('test-response', { message: 'Backend received test', socketId: socket.id, userId: socket.userId });
-    });
-
-    // Join conversation room
+    // Handle events
     socket.on('join-conversation', (conversationId) => {
-      // Verify user has access to this conversation
-      socket.join(`conversation-${conversationId}`);
-      console.log(`🏠 [WebSocket] ${socket.userEmail} joined conversation ${conversationId}`);
-      
-      // Send confirmation
-      socket.emit('joined-conversation', { conversationId });
+      socket.join(`conversation_${conversationId}`);
+      console.log(`🔗 [WebSocket] User ${socket.userId} joined conversation ${conversationId}`);
     });
 
-    // Leave conversation room  
     socket.on('leave-conversation', (conversationId) => {
-      socket.leave(`conversation-${conversationId}`);
-      console.log(`🚪 [WebSocket] ${socket.userEmail} left conversation ${conversationId}`);
+      socket.leave(`conversation_${conversationId}`);
+      console.log(`🔗 [WebSocket] User ${socket.userId} left conversation ${conversationId}`);
     });
 
-    // Handle user typing (optional feature)
-    socket.on('user-typing', (data) => {
-      socket.to(`conversation-${data.conversationId}`).emit('user-typing', {
+    socket.on('typing', (data) => {
+      socket.to(`conversation_${data.conversationId}`).emit('user-typing', {
         userId: socket.userId,
-        userEmail: socket.userEmail
+        isTyping: data.isTyping
       });
     });
 
-    socket.on('user-stopped-typing', (data) => {
-      socket.to(`conversation-${data.conversationId}`).emit('user-stopped-typing', {
-        userId: socket.userId
-      });
-    });
-
-    // Handle disconnection
-    socket.on('disconnect', () => {
-      console.log(`🔌 [WebSocket] Client disconnected: ${socket.id} (User: ${socket.userEmail})`);
+    socket.on('disconnect', (reason) => {
+      console.log(`❌ [WebSocket] Client disconnected: ${socket.id} - ${reason}`);
     });
   });
-
-  return io;
 }
 
-// Event emitters for message processing
-const emitToConversation = (conversationId, event, data) => {
-  if (io) {
-    const room = `conversation-${conversationId}`;
-    const clientsInRoom = io.sockets.adapter.rooms.get(room);
-    const clientCount = clientsInRoom ? clientsInRoom.size : 0;
-    
-    console.log(`📡 [WebSocket] Emitting ${event} to conversation ${conversationId} (${clientCount} clients in room):`, data);
-    io.to(room).emit(event, data);
-    
-    if (clientCount === 0) {
-      console.warn(`⚠️ [WebSocket] No clients in room ${room} to receive ${event} event`);
-    }
-  } else {
-    console.error(`❌ [WebSocket] Cannot emit ${event} - WebSocket server not initialized`);
-  }
-};
-
-// Message processing events
+// Message Events - Simple and robust WebSocket message emitters
 const MessageEvents = {
-  // When user message is created and processing starts
   MESSAGE_PROCESSING_STARTED: (conversationId, messageId) => {
-    emitToConversation(conversationId, 'message-processing-started', { 
-      messageId,
-      status: 'processing',
-      timestamp: new Date()
-    });
+    if (globalIO) {
+      console.log(`📡 [WebSocket] Emitting message-processing-started for message ${messageId}`);
+      globalIO.to(`conversation_${conversationId}`).emit('message-processing-started', {
+        messageId,
+        status: 'processing'
+      });
+    }
   },
 
-  // When AI is generating response
   AI_THINKING: (conversationId, messageId) => {
-    emitToConversation(conversationId, 'ai-thinking', { 
-      messageId,
-      status: 'ai-processing',
-      timestamp: new Date()
-    });
+    if (globalIO) {
+      console.log(`📡 [WebSocket] Emitting ai-thinking for message ${messageId}`);
+      globalIO.to(`conversation_${conversationId}`).emit('ai-thinking', {
+        messageId,
+        status: 'thinking'
+      });
+    }
   },
 
-  // When AI response is complete
-  AI_RESPONSE_COMPLETE: (conversationId, userMessageId, assistantMessage) => {
-    emitToConversation(conversationId, 'ai-response-complete', { 
-      userMessageId,
-      assistantMessage: {
-        id: assistantMessage.id,
-        text: assistantMessage.formattedText || assistantMessage.text,
-        originalText: assistantMessage.text,
-        contentType: assistantMessage.contentType,
-        isUser: false,
-        timestamp: assistantMessage.createdAt,
-        processedAt: assistantMessage.processedAt,
-        status: assistantMessage.status
-      },
-      timestamp: new Date()
-    });
+  AI_RESPONSE_COMPLETE: (conversationId, messageId, assistantMessage) => {
+    if (globalIO) {
+      console.log(`📡 [WebSocket] Emitting ai-response-complete for message ${messageId}`);
+      globalIO.to(`conversation_${conversationId}`).emit('ai-response-complete', {
+        messageId,
+        assistantMessage: {
+          id: assistantMessage.id,
+          text: assistantMessage.formattedText || assistantMessage.text,
+          originalText: assistantMessage.text,
+          contentType: assistantMessage.contentType || 'text',
+          isUser: false,
+          timestamp: assistantMessage.createdAt,
+          processedAt: assistantMessage.processedAt,
+          status: assistantMessage.status,
+          error: assistantMessage.error
+        }
+      });
+    }
   },
 
-  // When there's an error
   MESSAGE_ERROR: (conversationId, messageId, error) => {
-    emitToConversation(conversationId, 'message-error', { 
-      messageId,
-      error: error.message || error,
-      status: 'error',
-      timestamp: new Date()
-    });
+    if (globalIO) {
+      console.log(`📡 [WebSocket] Emitting message-error for message ${messageId}`);
+      globalIO.to(`conversation_${conversationId}`).emit('message-error', {
+        messageId,
+        error: error.message || 'An error occurred'
+      });
+    }
   },
 
-  // Progress updates during PDF processing
-  PDF_PROCESSING_PROGRESS: (conversationId, progress) => {
-    emitToConversation(conversationId, 'pdf-processing-progress', {
-      progress,
-      timestamp: new Date()
-    });
-  },
-
-  // When PDF processing completes
   PDF_PROCESSING_COMPLETE: (conversationId) => {
-    emitToConversation(conversationId, 'pdf-processing-complete', {
-      status: 'completed',
-      timestamp: new Date()
-    });
+    if (globalIO) {
+      console.log(`📡 [WebSocket] Emitting pdf-processing-complete for conversation ${conversationId}`);
+      globalIO.to(`conversation_${conversationId}`).emit('pdf-processing-complete', {
+        status: 'completed'
+      });
+    }
   }
 };
+
+// Emit events to specific rooms
+function emitToUser(io, userId, event, data) {
+  io.to(`user_${userId}`).emit(event, data);
+}
+
+function emitToConversation(io, conversationId, event, data) {
+  io.to(`conversation_${conversationId}`).emit(event, data);
+}
 
 module.exports = {
-  initializeWebSocket,
-  MessageEvents,
-  emitToConversation
+  setupWebSocket,
+  emitToUser,
+  emitToConversation,
+  MessageEvents
 };

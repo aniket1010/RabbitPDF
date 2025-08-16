@@ -48,7 +48,6 @@ router.patch('/profile', verifyAuth, async (req, res) => {
             id: true,
             name: true,
             email: true,
-            avatar: true,
             image: true
           }
         });
@@ -81,7 +80,6 @@ router.patch('/profile', verifyAuth, async (req, res) => {
         id: true,
         name: true,
         email: true,
-        avatar: true,
         image: true
       }
     });
@@ -150,19 +148,18 @@ router.patch('/avatar', verifyAuth, async (req, res) => {
     const updatedUser = await prisma.user.upsert({
       where: { id: userId },
       update: { 
-        avatar 
+        image: avatar 
       },
       create: {
         id: userId,
         email: userEmail,
         name: userName,
-        avatar
+        image: avatar
       },
       select: {
         id: true,
         name: true,
         email: true,
-        avatar: true,
         image: true
       }
     });
@@ -174,11 +171,11 @@ router.patch('/avatar', verifyAuth, async (req, res) => {
     if (io) {
       console.log(`📡 [User] Emitting userProfileUpdated to user_${userId}:`, {
         userId,
-        avatar
+        avatar: avatar
       });
       io.to(`user_${userId}`).emit('userProfileUpdated', {
         userId,
-        avatar,
+        avatar: avatar,  // ✅ FIXED - now sends 'avatar' instead of 'image'
         type: 'avatar'
       });
     }
@@ -205,7 +202,6 @@ router.get('/profile', verifyAuth, async (req, res) => {
         id: true,
         name: true,
         email: true,
-        avatar: true,
         image: true
       }
     });
@@ -239,7 +235,6 @@ router.post('/lookup', async (req, res) => {
         id: true,
         name: true,
         email: true,
-        avatar: true,
         image: true
       }
     });
