@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import AmbientBackground from "@/components/AmbientBackground";
 
@@ -11,24 +12,21 @@ export default function VerifyEmailPage() {
   const [message, setMessage] = useState<string>("");
   const [resending, setResending] = useState(false);
 
-  const { token, email } = useMemo(() => {
-    if (typeof window === "undefined") return { token: null as string | null, email: null as string | null };
-    const params = new URLSearchParams(window.location.search);
-    return {
-      token: params.get("token"),
-      email: params.get("email"),
-    };
-  }, []);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const startVerify = useCallback(async () => {
-    if (!token || !email) return;
+    const currentToken = searchParams.get("token");
+    const currentEmail = searchParams.get("email");
+
+    if (!currentToken || !currentEmail) return;
     setStatus("verifying");
     setMessage("Verifying your email...");
     try {
       const res = await fetch("/api/auth/email/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, email }),
+        body: JSON.stringify({ token: currentToken, email: currentEmail }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -36,43 +34,61 @@ export default function VerifyEmailPage() {
       }
       setStatus("success");
       setMessage("Email verified! You can now sign in.");
+
+      // Remove token from URL after successful verification
+      const newSearchParams = new URLSearchParams(searchParams);
+      newSearchParams.delete("token");
+      router.replace(`/verify-email?${newSearchParams.toString()}`);
     } catch (e: unknown) {
       const message = typeof e === "object" && e && "message" in e ? String((e as { message?: unknown }).message) : undefined;
       setStatus("error");
       setMessage(message || "Verification link is invalid or expired.");
     }
-  }, [token, email]);
+  }, [searchParams, router]);
 
   const resend = useCallback(async () => {
-    if (!email) return;
+    const currentEmail = searchParams.get("email");
+    if (!currentEmail) return;
     setResending(true);
     try {
-      await fetch("/api/auth/email/send-verification", {
+      const res = await fetch("/api/auth/email/send-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: currentEmail }),
       });
-      setMessage("We re-sent the verification link. Check your inbox (and spam). The link expires in 30 minutes.");
-    } catch {
-      setMessage("Could not resend the email. Please try again in a moment.");
+      if (res.ok) {
+        setStatus("success");
+        setMessage("We re-sent the verification link. Check your inbox (and spam).");
+      } else {
+        setStatus("error");
+        const data = await res.json().catch(() => ({}));
+        setMessage(data?.error || "Could not resend the email. Please try again in a moment.");
+      }
+    } catch (e: unknown) {
+      setStatus("error");
+      const message = typeof e === "object" && e && "message" in e ? String((e as { message?: unknown }).message) : undefined;
+      setMessage(message || "Could not resend the email. Please try again in a moment.");
     } finally {
       setResending(false);
     }
-  }, [email]);
+  }, [searchParams]);
 
   useEffect(() => {
     // If token is provided (clicked from email), verify. Otherwise show instructions.
-    if (token && email) {
+    const currentToken = searchParams.get("token");
+    const currentEmail = searchParams.get("email");
+
+    if (currentToken && currentEmail) {
       startVerify();
     } else {
       setStatus("pending");
       setMessage(
-        email
-          ? `Check your inbox to verify ${email}. Click the link we sent to finish creating your account.`
+        currentEmail
+          ? `Check your inbox to verify ${currentEmail}. Click the link we sent to finish creating your account.`
           : "This page needs a verification link from your email."
       );
     }
-  }, [token, email, startVerify]);
+  }, [searchParams, startVerify]);
 
   return (
     <AmbientBackground>
@@ -91,7 +107,7 @@ export default function VerifyEmailPage() {
           {message}
         </p>
 
-        {status === "pending" && email && (
+        {((status === "pending" || status === "error") && searchParams.get("email")) && (
           <div className="space-y-3">
             <button
               className="px-4 py-2 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
