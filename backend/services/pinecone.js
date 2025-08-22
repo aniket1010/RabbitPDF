@@ -72,7 +72,6 @@ function isRetryableError(error) {
 // Test connection function
 async function testPineconeConnection() {
     try {
-        console.log('Testing Pinecone connection...');
         const testResponse = await retryWithBackoff(async () => {
             return await index.query({
                 vector: Array(1536).fill(0), // 1536 dimensions for text-embedding-3-small
@@ -81,7 +80,6 @@ async function testPineconeConnection() {
             });
         }, 'Pinecone connection test');
         
-        console.log('✅ Pinecone connection successful');
         return true;
     } catch (error) {
         console.error('❌ Pinecone connection failed:', error.message);
@@ -138,14 +136,9 @@ async function batchUpsertEmbeddings(vectorDataArray) {
     try {
         // **Execute all batch upsert promises in parallel**
         await Promise.all(batchPromises);
-        
-        const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`🌲 [Pinecone] Upserted ${vectorDataArray.length} vectors in ${totalTime}s (${Math.round(vectorDataArray.length / totalTime)} vectors/sec)`);
     } catch (error) {
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.error(`\n❌ [Pinecone] === BATCH UPSERT FAILED ===`);
-        console.error(`⏱️  [Pinecone] Failed after ${totalTime}s`);
-        console.error(`💥 [Pinecone] Error:`, error);
+        console.error(`❌ [Pinecone] Batch upsert failed after ${totalTime}s:`, error);
         // Re-throw the error to be caught by the calling background process
         throw error;
     }
@@ -170,14 +163,12 @@ async function queryEmbedding(vector, topK = 5, conversationId = null) {
             return await index.query(queryOptions);
         }, 'Pinecone query');
 
-        console.log('Query response:', JSON.stringify(queryResponse, null, 2));
         return queryResponse.matches;
     } catch (error) {
         console.error('❌ Error querying vectors:', error.message);
         if (error.message.includes('dimension')) {
             console.error('📏 Dimension mismatch - your Pinecone index dimension does not match your embedding model');
         }
-        console.log('⚠️ Returning empty results due to Pinecone error');
         return [];
     }
 }
@@ -186,17 +177,15 @@ async function deleteEmbeddings(conversationId) {
     // This function remains largely the same, but it's good practice
     // to use the filter API for deletions when possible.
     try {
-        console.log(`[Pinecone] Deleting embeddings for conversation: ${conversationId}`);
         await retryWithBackoff(
             () => index.deleteMany({ conversationId: conversationId }),
             `Pinecone delete for conversation ${conversationId}`
         );
-        console.log(`[Pinecone] Successfully deleted embeddings for conversation: ${conversationId}`);
     } catch (error) {
         // Pinecone might throw an error if the filter matches no vectors.
         // We can safely ignore this or log it as a warning.
         if (error.message.includes("no vectors found")) {
-            console.log(`[Pinecone] No embeddings found to delete for conversation: ${conversationId}`);
+            // Silently ignore - no embeddings to delete
         } else {
             console.warn('[Pinecone] Warning: Error deleting vectors:', error.message);
         }

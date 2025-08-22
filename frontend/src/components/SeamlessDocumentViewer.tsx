@@ -189,7 +189,7 @@ export default function SeamlessDocumentViewer({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className="w-full h-full">
+      <div className="w-full h-full min-h-[600px]">
         <PreviewPDF 
           conversationId={conversationId}
           currentPage={currentPage}

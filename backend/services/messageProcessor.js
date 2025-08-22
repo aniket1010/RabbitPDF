@@ -45,7 +45,6 @@ async function processMessageContent(content, role = 'assistant') {
           if (!pages || pages.length === 0) return match;
           const buttons = pages
             .map(pageNumber => {
-              console.log(`🔗 [MessageProcessor] Converting citation in group: Page ${pageNumber}`);
               return createCitationButton(pageNumber);
             })
             .join(' ');
@@ -54,7 +53,6 @@ async function processMessageContent(content, role = 'assistant') {
 
         // 2) Handle single citations like: [Page 40]
         contentWithButtons = contentWithButtons.replace(/\[Page (\d+)\]/g, (match, pageNumber) => {
-          console.log(`🔗 [MessageProcessor] Converting citation: ${match} -> button for page ${pageNumber}`);
           return createCitationButton(pageNumber);
         });
 
@@ -83,8 +81,6 @@ async function processMessageContent(content, role = 'assistant') {
             'data-page', 'type', 'style'
           ],
         });
-        
-        console.log(`🔗 [MessageProcessor] Processed content with ${(sanitizedContent.match(/citation-button/g) || []).length} citation buttons`);
         
         processedContent = {
           original: content,
@@ -182,8 +178,6 @@ async function getConversationHistory(conversationId, currentMessageId, maxMessa
       if (optimizedHistory.length >= maxMessages) break;
     }
     
-    console.log(`📚 [ConversationHistory] Retrieved ${optimizedHistory.length} previous messages (${totalTokens} estimated tokens) for context`);
-    
     return optimizedHistory;
   } catch (error) {
     console.error('❌ [ConversationHistory] Error retrieving conversation history:', error);
@@ -218,7 +212,6 @@ async function processAndRespondToMessage(message) {
     
     // Get extended matches for better ToC filtering
     const extendedMatches = await queryEmbedding(questionEmbedding, 15, message.conversationId);
-    console.log(`🔍 [MessageProcessor] Found ${extendedMatches.length} vector matches`);
     
     const references = extendedMatches
       .filter(match => {
@@ -226,7 +219,6 @@ async function processAndRespondToMessage(message) {
         const hasPageNumber = match.metadata?.pageNumber && match.metadata.pageNumber > 0;
         
         if (!hasText || !hasPageNumber) {
-          console.warn(`🚫 [MessageProcessor] Filtered out match: hasText=${hasText}, hasPageNumber=${hasPageNumber}`);
           return false;
         }
         
@@ -271,7 +263,6 @@ async function processAndRespondToMessage(message) {
           
           // If we have at least 2 content pages, completely exclude ToC
           if (contentPages.length >= 2) {
-            console.log(`🚫 [MessageProcessor] EXCLUDING ToC page ${match.metadata.pageNumber} (confidence: ${tocConfidence?.toFixed(2)}, patterns: ${hasTocPatterns}, topics: ${hasMultipleTopics}) - have ${contentPages.length} content pages`);
             return false;
           }
         }
@@ -293,8 +284,6 @@ async function processAndRespondToMessage(message) {
       .map(match => {
         const pageType = match.metadata?.pageType || 'unknown';
         const tocConfidence = match.metadata?.tocConfidence || 0;
-        const isToC = pageType === 'toc' || tocConfidence > 0.6;
-        console.log(`🔍 [MessageProcessor] Retrieved match: Page ${match.metadata.pageNumber} (${pageType}${isToC ? ' - ToC' : ''}), Score: ${match.score?.toFixed(4)}, ToC: ${tocConfidence?.toFixed(2)}, Text: "${match.metadata.text.substring(0, 100)}..."`);
         return {
           text: match.metadata.text,
           pageNumber: match.metadata.pageNumber,
@@ -303,8 +292,6 @@ async function processAndRespondToMessage(message) {
         };
       })
       .slice(0, 5);
-
-    console.log(`🔍 [MessageProcessor] Using ${references.length} references from pages:`, references.map(r => r.pageNumber));
 
     let answer, processedAnswer;
     
@@ -319,8 +306,6 @@ async function processAndRespondToMessage(message) {
         conversationHistory: conversationHistory
       };
       
-      console.log(`📤 [MessageProcessor] Sending to GPT with ${references.length} references and ${conversationHistory.length} previous messages`);
-      
       // Emit WebSocket event: AI is thinking
       MessageEvents.AI_THINKING(message.conversationId, message.id);
       
@@ -328,7 +313,6 @@ async function processAndRespondToMessage(message) {
       
       // Validate that we got citations
       const citationCount = (answer.match(/\[Page \d+\]/g) || []).length;
-      console.log(`📥 [MessageProcessor] Received answer with ${citationCount} citations`);
       
       processedAnswer = await processMessageContent(answer, 'assistant');
     }
@@ -354,7 +338,6 @@ async function processAndRespondToMessage(message) {
     // Emit WebSocket event: AI response complete (includes user message update)
     MessageEvents.AI_RESPONSE_COMPLETE(message.conversationId, message.id, assistantMessage);
 
-    console.log(`✅ [MessageProcessor] Successfully processed message ${message.id}`);
     return assistantMessage;
     
   } catch (error) {

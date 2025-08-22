@@ -1,7 +1,7 @@
 'use client';
 
-import { SessionProvider } from "next-auth/react";
 import { ReactNode } from "react";
+import { Toaster } from "@/components/ui/toaster";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -9,8 +9,9 @@ interface ProvidersProps {
 
 export default function Providers({ children }: ProvidersProps) {
   return (
-    <SessionProvider>
+    <>
       {children}
-    </SessionProvider>
+      <Toaster />
+    </>
   );
 } 

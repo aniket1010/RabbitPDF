@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Camera, X, Settings, Check, Edit3 } from "lucide-react"
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { useSession } from 'next-auth/react'
+import { useSession } from '@/lib/auth-client'
 import { updateUsername, updateUserAvatar } from "@/services/api"
 import { useWebSocket } from "@/hooks/useWebSocket"
 
@@ -18,7 +18,7 @@ interface SettingsDialogProps {
 }
 
 export default function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { data: session, update: updateSession } = useSession()
+  const { data: session } = useSession()
   const { onUserProfileUpdated } = useWebSocket()
 
   console.log("🔍 [SettingsDialog] Render:", {
@@ -51,7 +51,7 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
     if (open && session?.user) {
       console.log("🔍 [Settings] Loading user data from session:", session.user)
       setCurrentUsername(session.user.name || "")
-      setCurrentAvatar(session.user.avatar || session.user.image || "/avatars/Horse.png")
+      setCurrentAvatar(session.user.image || "/avatars/Horse.png")
     } else if (open) {
       console.log("🔍 [Settings] No session data available:", { open, session })
     }
@@ -97,15 +97,6 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
       setIsEditingUsername(false)
       console.log("✅ Username saved successfully:", tempUsername.trim())
 
-      // Update session
-      await updateSession({
-        ...session,
-        user: {
-          ...session?.user,
-          name: tempUsername.trim(),
-        },
-      })
-
       // The WebSocket listener will handle updating the UI everywhere else
       console.log("🔄 [Settings] Username update complete, WebSocket will handle real-time updates")
     } catch (err) {
@@ -135,26 +126,24 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
   const handleSaveAvatar = async () => {
     if (!tempAvatar || tempAvatar === currentAvatar) return
 
+    console.log("🔄 [Settings] Starting avatar save:", { tempAvatar, currentAvatar })
     setLoading(true)
     setError(null)
 
     try {
-      await updateUserAvatar(tempAvatar)
+      console.log("📡 [Settings] Making API call to update avatar...")
+      const result = await updateUserAvatar(tempAvatar)
+      console.log("✅ [Settings] API response:", result)
 
-      // Update session
-      await updateSession({
-        ...session,
-        user: {
-          ...session?.user,
-          avatar: tempAvatar,
-        },
-      })
-
+      // Update local state first
       setCurrentAvatar(tempAvatar)
       setIsEditingAvatar(false)
       console.log("✅ Avatar saved successfully:", tempAvatar)
+
+      // The WebSocket listener will handle updating the UI everywhere else
+      console.log("🔄 [Settings] Avatar update complete, WebSocket will handle real-time updates")
     } catch (err) {
-      console.error("Failed to update avatar:", err)
+      console.error("❌ Failed to update avatar:", err)
       setError("Failed to update avatar. Please try again.")
     } finally {
       setLoading(false)

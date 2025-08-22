@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String        @unique
+  emailVerified Boolean       @default(false)
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @default(now()) @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  conversations Conversation[]
+}
+
+model Account {
+  id                     String    @id @default(cuid())
+  userId                 String
+  accountId              String
+  providerId             String
+  accessToken            String?
+  refreshToken           String?
+  accessTokenExpiresAt   DateTime?
+  refreshTokenExpiresAt  DateTime?
+  scope                  String?
+  idToken                String?
+  password               String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @default(now()) @updatedAt
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([providerId, accountId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+  
+  @@unique([identifier, value])
+}
+
+model PendingUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  image     String?
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String
+  fileName  String
+  filePath  String
+  processingStatus String @default("pending") // "pending", "processing", "completed", "failed"
+  createdAt DateTime  @default(now())
+  messages  Message[]
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  role           String
+  text           String      // Original/raw content
+  formattedText  String?     // Processed/formatted content (HTML or markdown)
+  contentType    String      @default("text") // "text", "markdown", "html"
+  status         String      @default("completed") // "pending", "processing", "completed", "failed", "error"
+  processedAt    DateTime?   // When content was processed
+  createdAt      DateTime    @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  error          String?     // Error message if processing failed
+  parentMessageId String?    // For linking assistant messages to user messages
+  }

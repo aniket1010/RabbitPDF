@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useSession } from '@/lib/auth-client';
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthButton from './AuthButton';
@@ -11,17 +11,21 @@ interface AuthGuardProps {
 }
 
 export default function AuthGuard({ children, fallback }: AuthGuardProps) {
-  const { data: session, status } = useSession();
+  const { data: session, isPending } = useSession();
   const router = useRouter();
 
   useEffect(() => {
     // If not authenticated and not loading, redirect to home
-    if (status !== 'loading' && !session?.user) {
+    if (!isPending && !session?.user) {
       router.push('/');
     }
-  }, [session, status, router]);
+    // If authenticated but email not verified, redirect to verify page notice
+    if (!isPending && session?.user && (session.user as any).emailVerified === false) {
+      router.push('/verify-email');
+    }
+  }, [session, isPending, router]);
 
-  if (status === 'loading') {
+  if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">

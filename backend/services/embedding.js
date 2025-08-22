@@ -2,15 +2,10 @@ const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function getEmbedding(text) {
-  const startTime = Date.now();
-  
   const res = await openai.embeddings.create({
     model: 'text-embedding-3-small', // Changed to 3-small for 1536 dimensions
     input: text
   });
-  
-  const endTime = Date.now();
-  console.log(`Embedding generation took: ${endTime - startTime}ms`);
   
   return res.data[0].embedding;
 }

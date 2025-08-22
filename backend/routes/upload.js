@@ -106,12 +106,10 @@ function chunkPdfWithCoordinates(pageInfo, conversationId) {
         }
     });
 
-    console.log(`✅ [${conversationId}] Coordinate-based chunking complete. Generated ${allChunks.length} chunks.`);
     return allChunks;
 }
 
 router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res) => {
-  console.log('\n📤 === PDF UPLOAD STARTED ===');
   let conversation;
 
   try {
@@ -119,8 +117,6 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     const originalName = req.file.originalname;
     const mimetype = req.file.mimetype;
     const size = req.file.size;
-
-    console.log('📄 File details:', { originalName, mimetype, size: `${(size / 1024 / 1024).toFixed(2)}MB` });
 
     // Parse PDF
     const dataBuffer = fs.readFileSync(filePath);
@@ -133,12 +129,8 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     if (!text) {
       return res.status(400).json({ error: 'No text content found in PDF' });
     }
-    console.log(`📊 Extracted ${text.length.toLocaleString()} characters of text`);
 
     // Create conversation immediately with user ID
-    console.log('📋 [Upload] Creating conversation for user:', req.userId);
-    console.log('📋 [Upload] User details:', { id: req.userId, email: req.userEmail, name: req.userName });
-    
     // Validate required user information
     if (!req.userId || !req.userEmail) {
       throw new Error('Missing required user information from authentication token');
@@ -149,10 +141,7 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
       where: { id: req.userId }
     });
     
-    console.log('📋 [Upload] User found in database:', !!user);
-    
     if (!user) {
-      console.log('👤 [Upload] User not found in database, creating user:', req.userId);
       try {
         // Create user if they don't exist
         user = await prisma.user.create({
@@ -163,25 +152,16 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
             emailVerified: new Date(), // Mark as verified since they signed in via OAuth
           }
         });
-        console.log('✅ [Upload] User created successfully:', user.email);
       } catch (userCreateError) {
         console.error('❌ [Upload] Failed to create user:', userCreateError);
-        console.error('❌ [Upload] Error details:', {
-          code: userCreateError.code,
-          meta: userCreateError.meta,
-          message: userCreateError.message
-        });
         
         // Handle unique constraint error on email
         if (userCreateError.code === 'P2002' && userCreateError.meta?.target?.includes('email')) {
-          console.log('📧 [Upload] User with this email already exists, fetching existing user');
           user = await prisma.user.findUnique({
             where: { email: req.userEmail }
           });
           
-          if (user) {
-            console.log('✅ [Upload] Found existing user by email:', user.email);
-          } else {
+          if (!user) {
             console.error('❌ [Upload] Could not find user by email after constraint error');
             throw new Error('User creation failed due to email conflict, but user not found');
           }
@@ -197,7 +177,6 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     }
     
     try {
-      console.log('📋 [Upload] Creating conversation with userId:', user.id);
       conversation = await prisma.conversation.create({
         data: {
           title: originalName,
@@ -209,12 +188,8 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
       });
     } catch (conversationError) {
       console.error('❌ [Upload] Failed to create conversation:', conversationError);
-      console.error('❌ [Upload] User ID that failed:', user.id);
-      console.error('❌ [Upload] User exists in DB:', !!user);
       throw conversationError;
     }
-
-    console.log(`🆔 Created conversation: ${conversation.id}`);
     
     // Return conversation ID immediately
     res.json({ conversationId: conversation.id });
@@ -223,8 +198,7 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     processPdfInBackground(text, conversation.id, originalName);
 
   } catch (error) {
-    console.error('\n❌ === PDF UPLOAD FAILED ===');
-    console.error('💥 Error in upload route:', error);
+    console.error('❌ PDF upload failed:', error);
     
     if (conversation && conversation.id) {
       try {
@@ -247,9 +221,6 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
 
 // Asynchronous background processing function
 async function processPdfInBackground(text, conversationId, originalName) {
-    console.log(`\n🔄 [${conversationId}] === BACKGROUND PROCESSING STARTED ===`);
-    console.log(`📄 [${conversationId}] Processing: ${originalName}`);
-    
     try {
         // Set status to processing
         await prisma.conversation.update({
@@ -258,7 +229,6 @@ async function processPdfInBackground(text, conversationId, originalName) {
         });
 
         // Text chunking with new coordinate-based method
-        console.log(`📝 [${conversationId}] Starting coordinate-based chunking...`);
         const coordinateChunks = chunkPdfWithCoordinates(global.pdfPageInfo || [], conversationId);
         const chunks = coordinateChunks.map(chunk => chunk.text); // For embedding
         
@@ -275,7 +245,6 @@ async function processPdfInBackground(text, conversationId, originalName) {
             ...coordinateChunks[index],
             index
         }));
-        console.log(`🧠 [${conversationId}] Generated ${embeddingResults.length} embeddings`);
 
         // Upsert to Pinecone with coordinate metadata
         const vectorDataArray = embeddingResults.map((result) => ({
@@ -289,16 +258,12 @@ async function processPdfInBackground(text, conversationId, originalName) {
         }));
         
         await batchUpsertEmbeddings(vectorDataArray);
-        console.log(`📤 [${conversationId}] Upserted ${vectorDataArray.length} vectors to Pinecone`);
 
         // Mark as completed
         await prisma.conversation.update({
             where: { id: conversationId },
             data: { processingStatus: 'completed' }
         });
-
-        console.log(`✅ [${conversationId}] Background processing completed successfully`);
-        console.log(`📊 [${conversationId}] Final stats: ${chunks.length} chunks, ${embeddingResults.length} embeddings, ${vectorDataArray.length} vectors`);
         
         // Emit WebSocket event: PDF processing complete
         const { MessageEvents } = require('../websocket');
@@ -310,7 +275,6 @@ async function processPdfInBackground(text, conversationId, originalName) {
         // Optional: Test reference accuracy in development
         if (process.env.NODE_ENV !== 'production') {
             try {
-                console.log(`🧪 [${conversationId}] Running reference accuracy test...`);
                 await testReferenceAccuracy(conversationId, Math.min(10, chunks.length));
             } catch (testError) {
                 console.warn(`🧪 [${conversationId}] Reference accuracy test failed:`, testError.message);
@@ -345,17 +309,12 @@ async function processPendingMessages(conversationId) {
             orderBy: { createdAt: 'asc' }
         });
 
-        console.log(`📝 [${conversationId}] Processing ${pendingMessages.length} pending messages`);
-
         const { processAndRespondToMessage } = require('../services/messageProcessor');
 
         for (const message of pendingMessages) {
             try {
-                console.log(`📝 [${conversationId}] Processing pending message: ${message.id} - "${message.text}"`);
                 const assistantMessage = await processAndRespondToMessage(message);
-                if (assistantMessage) {
-                    console.log(`✅ [${conversationId}] Successfully processed pending message ${message.id}, created assistant message ${assistantMessage.id}`);
-                } else {
+                if (!assistantMessage) {
                     console.log(`❌ [${conversationId}] Failed to create assistant response for pending message ${message.id}`);
                 }
             } catch (error) {
@@ -366,10 +325,6 @@ async function processPendingMessages(conversationId) {
                     data: { status: 'error', error: error.message }
                 });
             }
-        }
-        
-        if (pendingMessages.length > 0) {
-            console.log(`✅ [${conversationId}] Finished processing ${pendingMessages.length} pending messages`);
         }
     } catch (error) {
         console.error(`❌ [${conversationId}] Error processing pending messages:`, error);
@@ -409,8 +364,6 @@ function renderPage(pageData) {
             global.pdfPageInfo[pageData.pageIndex] = pageInfo;
             global.pdfPageInfoTimestamp = Date.now(); // Track when this was set
             
-            console.log(`📄 [PDF] Parsed page ${pageInfo.pageNumber}: ${text.length} chars, ${pageInfo.textItems.length} text items`);
-            
             return text;
         });
 }
@@ -419,13 +372,10 @@ module.exports = router;
 // Testing utility for reference validation (development use)
 async function testReferenceAccuracy(conversationId, sampleSize = 10) {
     if (process.env.NODE_ENV === 'production') {
-        console.log('🧪 [Testing] Reference testing disabled in production');
         return;
     }
-    
-    console.log(`🧪 [Testing] Starting reference accuracy test for conversation ${conversationId}`);
-    
-    try {
+
+    console.log(`🧪 [Testing] Starting reference accuracy test for conversation ${conversationId}`);    try {
         // Get sample chunks from Pinecone
         const { queryEmbedding } = require('../services/pinecone');
         const sampleEmbedding = Array(1536).fill(0.01); // Dummy embedding for testing
@@ -463,17 +413,10 @@ async function testReferenceAccuracy(conversationId, sampleSize = 10) {
             }
             
             confidenceSum += metadata.confidence || 0;
-            
-            console.log(`🧪 [Testing] Chunk ${metadata.chunkId}: ${testsPassed}/4 tests passed, confidence: ${(metadata.confidence || 0).toFixed(3)}`);
         }
         
         const avgConfidence = totalTests > 0 ? confidenceSum / totalTests : 0;
         const passRate = totalTests > 0 ? (passedTests / totalTests) * 100 : 0;
-        
-        console.log(`🧪 [Testing] Reference Accuracy Results:`);
-        console.log(`  • Tests passed: ${passedTests}/${totalTests} (${passRate.toFixed(1)}%)`);
-        console.log(`  • Average confidence: ${avgConfidence.toFixed(3)}`);
-        console.log(`  • Recommendation: ${passRate >= 80 ? '✅ Good' : passRate >= 60 ? '⚠️ Fair' : '❌ Needs improvement'}`);
         
         return {
             totalTests,

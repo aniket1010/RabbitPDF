@@ -17,6 +17,8 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   const [isClient, setIsClient] = useState(false);
   const [pdfTitle, setPdfTitle] = useState<string>('');
 
+  console.log('🚀 [ResponsiveLayout] Rendering with conversationId:', conversationId);
+
   // Reference click handler - updated for new citation system
   const handleReferenceClick = useCallback((pageNumber: number, coordinates?: any[]) => {
     console.log('📄 [ResponsiveLayout] Reference clicked - Page:', pageNumber, 'Coordinates:', coordinates || 'none');
@@ -108,7 +110,7 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   // Desktop layout with resizable panels
   return (
     <div 
-      className="flex-1 h-full"
+      className="w-full h-screen"
       style={{
         willChange: 'contents',
         transform: 'translate3d(0, 0, 0)',

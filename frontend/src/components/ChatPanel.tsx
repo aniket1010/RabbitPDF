@@ -49,7 +49,9 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const httpAssistantFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  
+
+  console.log('💬 [ChatPanel] Rendering with conversationId:', conversationId, 'pdfTitle:', pdfTitle);
+
   // WebSocket hook
   const { socket, isConnected, joinConversation, leaveConversation, onConversationRenamed } = useWebSocket()
 
@@ -399,7 +401,7 @@ export default function ChatPanel({
 
   return (
     <div
-      className="w-full h-full flex flex-col bg-white"
+      className="w-full h-screen flex flex-col bg-white"
       style={{
         contain: "layout style paint size",
         isolation: "isolate",

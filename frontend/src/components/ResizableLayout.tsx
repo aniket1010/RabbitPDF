@@ -153,7 +153,7 @@ export default function ResizableLayout({
   return (
     <div 
       ref={containerRef}
-      className="h-full w-full relative"
+      className="h-screen w-full relative"
       style={{ 
         userSelect: isDragging ? 'none' : 'auto',
         overflow: 'hidden',

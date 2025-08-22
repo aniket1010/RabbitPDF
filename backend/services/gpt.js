@@ -7,12 +7,6 @@ async function askGpt(prompt, contextWithReferences) {
   const references = contextWithReferences.references || [];
   const conversationHistory = contextWithReferences.conversationHistory || [];
   
-  console.log('🔍 [GPT] Processing request with context:', {
-    hasReferences: !!(references && references.length > 0),
-    referenceCount: references.length,
-    conversationHistoryCount: conversationHistory.length
-  });
-  
   const messages = [
     {
       role: "system",
@@ -81,11 +75,6 @@ Context:`
     ).join('\n\n');
     
     messages[1].content += `\n${contextText}`;
-    
-    console.log('🔍 [GPT] Context formatted with page numbers:', {
-      pages: references.map(r => r.pageNumber),
-      totalLength: contextText.length
-    });
   } else {
     messages[1].content += `\n${context}`;
   }
@@ -103,17 +92,6 @@ Context:`
     const citationPattern = /\[Page (\d+)\]/g;
     const foundCitations = [...response.matchAll(citationPattern)];
     const availablePages = references.map(r => r.pageNumber);
-    
-    console.log('🔍 [GPT] Citation analysis:', {
-      foundCitations: foundCitations.length,
-      availablePages: availablePages,
-      citedPages: foundCitations.map(match => parseInt(match[1])),
-      citationDetails: foundCitations.map(match => ({
-        citation: match[0],
-        pageNumber: parseInt(match[1]),
-        isValid: availablePages.includes(parseInt(match[1]))
-      }))
-    });
     
     // Check for invalid citations
     const invalidCitations = foundCitations.filter(match => {
@@ -133,7 +111,6 @@ Context:`
       return response + fallback;
     }
     
-    console.log('✅ [GPT] Response generated with citations');
     return response;
     
   } catch (error) {

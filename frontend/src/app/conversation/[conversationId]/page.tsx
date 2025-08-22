@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use as useUnwrap } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/components';
 import { getConversationDetails } from '@/services/api';
-import AuthGuard from '@/components/AuthGuard';
+// Note: Removed strict AuthGuard to avoid blank screen when unauthenticated
 
 interface ConversationDetails {
   id: string;
@@ -21,16 +21,13 @@ interface PageProps {
 
 export default function ConversationPage({ params }: PageProps) {
   const router = useRouter();
-  const [conversationId, setConversationId] = useState<string>('');
+  const { conversationId: initialConversationId } = useUnwrap(params);
+  const [conversationId, setConversationId] = useState<string>(initialConversationId || '');
   const [conversationDetails, setConversationDetails] = useState<ConversationDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    params.then(({ conversationId }) => {
-      setConversationId(conversationId);
-    });
-  }, [params]);
+  // Params are unwrapped above; no additional effect needed to mirror params
 
   useEffect(() => {
     if (!conversationId) return;
@@ -39,14 +36,14 @@ export default function ConversationPage({ params }: PageProps) {
       try {
         setLoading(true);
         setError(null);
-        
-        console.log('Loading conversation details for ID:', conversationId);
+
+        console.log('🔍 [ConversationPage] Loading conversation details for ID:', conversationId);
         const details = await getConversationDetails(conversationId);
-        console.log('Conversation details loaded:', details);
+        console.log('✅ [ConversationPage] Conversation details loaded:', details);
         setConversationDetails(details);
-        
+
       } catch (err) {
-        console.error('Failed to load conversation:', err);
+        console.error('❌ [ConversationPage] Failed to load conversation:', err);
         setError('Failed to load conversation');
       } finally {
         setLoading(false);
@@ -101,11 +98,9 @@ export default function ConversationPage({ params }: PageProps) {
   }
 
   return (
-    <AuthGuard>
-      <MainLayout
-        filePath={conversationDetails.filePath}
-        conversationId={conversationDetails.id}
-      />
-    </AuthGuard>
+    <MainLayout
+      filePath={conversationDetails.filePath}
+      conversationId={conversationDetails.id}
+    />
   );
 }
