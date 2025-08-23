@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
+  log: process.env.PRISMA_LOG_LEVEL === 'debug' ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 
 // Handle graceful shutdown

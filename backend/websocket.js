@@ -50,6 +50,8 @@ function setupWebSocket(io) {
     socket.on('join-conversation', (conversationId) => {
       socket.join(`conversation_${conversationId}`);
       console.log(`🔗 [WebSocket] User ${socket.userId} joined conversation ${conversationId}`);
+      // Acknowledge join to the client so it can react (e.g., load messages)
+      socket.emit('joined-conversation', { conversationId });
     });
 
     socket.on('leave-conversation', (conversationId) => {

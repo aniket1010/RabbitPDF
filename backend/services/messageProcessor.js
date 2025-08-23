@@ -186,10 +186,28 @@ async function getConversationHistory(conversationId, currentMessageId, maxMessa
 }
 
 async function processAndRespondToMessage(message) {
-  await prisma.message.update({
-    where: { id: message.id },
+  // Atomically claim the user message to avoid duplicate processing
+  const claim = await prisma.message.updateMany({
+    where: { id: message.id, status: 'pending' },
     data: { status: 'processing' }
   });
+
+  if (claim.count === 0) {
+    // If it's already in processing, proceed; otherwise exit or reuse existing assistant
+    const current = await prisma.message.findUnique({ where: { id: message.id } });
+    if (!current) {
+      return null;
+    }
+    if (current.status !== 'processing') {
+      const existingAssistant = await prisma.message.findFirst({
+        where: { conversationId: message.conversationId, role: 'assistant', parentMessageId: message.id }
+      });
+      if (existingAssistant) return existingAssistant;
+      // Another processor may still pick this up later
+      return null;
+    }
+    // Status is already processing – continue to generate the assistant reply
+  }
 
   // Emit WebSocket event: processing started
   MessageEvents.MESSAGE_PROCESSING_STARTED(message.conversationId, message.id);
@@ -210,9 +228,43 @@ async function processAndRespondToMessage(message) {
 
     const questionEmbedding = await getEmbedding(message.text);
     
-    // Get extended matches for better ToC filtering
-    const extendedMatches = await queryEmbedding(questionEmbedding, 15, message.conversationId);
+    // Multi-query: 2 paraphrases + original (cheap and parallel)
+    const variantPrompts = [
+      message.text,
+      `Paraphrase the question for search: ${message.text}`,
+      `Another way to ask: ${message.text}`
+    ];
+    const uniqueVariants = Array.from(new Set(variantPrompts));
+    const variantEmbeddings = await Promise.all(uniqueVariants.map(q => getEmbedding(q)));
     
+    const resultsPerVariant = await Promise.all(
+      variantEmbeddings.map(vec => queryEmbedding(vec, 7, message.conversationId))
+    );
+    // Merge and dedupe by chunkId or text hash
+    const merged = [];
+    const seen = new Set();
+    for (const arr of resultsPerVariant) {
+      for (const m of arr) {
+        const key = m?.metadata?.chunkId || `${m?.metadata?.pageNumber}-${(m?.metadata?.text||'').slice(0,64)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(m);
+        }
+      }
+    }
+    // Fallback to single query if variants failed
+    const extendedMatches = merged.length > 0 ? merged : await queryEmbedding(questionEmbedding, 15, message.conversationId);
+    
+    // Lightweight lexical scoring for diversity and relevance
+    const terms = String(message.text).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const tfScore = (t) => {
+      if (!t) return 0;
+      const txt = String(t).toLowerCase();
+      let score = 0;
+      for (const term of terms) if (txt.includes(term)) score += 1;
+      return score;
+    };
+
     const references = extendedMatches
       .filter(match => {
         const hasText = match.metadata?.text && match.metadata.text.trim().length > 0;
@@ -224,6 +276,14 @@ async function processAndRespondToMessage(message) {
         
         return true;
       })
+      // Boost items with sectionTitle and lexical hits
+      .map(m => ({
+        ...m,
+        score:
+          (typeof m.score === 'number' ? m.score : 0) +
+          Math.min(0.2, tfScore(m.metadata?.text) * 0.02) +
+          (m.metadata?.sectionTitle ? 0.05 : 0),
+      }))
       // AGGRESSIVE ToC FILTERING: Completely exclude ToC pages if we have enough content pages
       .filter((match, index, allMatches) => {
         const pageType = match.metadata?.pageType || 'unknown';
@@ -269,17 +329,12 @@ async function processAndRespondToMessage(message) {
         
         return true;
       })
-      // Sort to prefer content pages over ToC pages
+      // Sort by enhanced score (dense + lexical + title boost), prefer non-ToC
       .sort((a, b) => {
         const aIsToC = a.metadata?.pageType === 'toc' || (a.metadata?.tocConfidence || 0) > 0.6;
         const bIsToC = b.metadata?.pageType === 'toc' || (b.metadata?.tocConfidence || 0) > 0.6;
-        
-        // If one is ToC and other is content, prefer content
-        if (aIsToC && !bIsToC) return 1;
-        if (!aIsToC && bIsToC) return -1;
-        
-        // If both are same type, sort by score (higher is better)
-        return b.score - a.score;
+        if (aIsToC !== bIsToC) return aIsToC ? 1 : -1;
+        return (b.score || 0) - (a.score || 0);
       })
       .map(match => {
         const pageType = match.metadata?.pageType || 'unknown';
@@ -287,6 +342,7 @@ async function processAndRespondToMessage(message) {
         return {
           text: match.metadata.text,
           pageNumber: match.metadata.pageNumber,
+          sectionTitle: match.metadata.sectionTitle || null,
           pageType: pageType,
           tocConfidence: tocConfidence
         };
@@ -317,6 +373,16 @@ async function processAndRespondToMessage(message) {
       processedAnswer = await processMessageContent(answer, 'assistant');
     }
 
+    // Guard: if an assistant was already created in the meantime, return it
+    const preExistingAssistant = await prisma.message.findFirst({
+      where: { conversationId: message.conversationId, role: 'assistant', parentMessageId: message.id }
+    });
+    if (preExistingAssistant) {
+      await prisma.message.update({ where: { id: message.id }, data: { status: 'completed', error: null } });
+      MessageEvents.AI_RESPONSE_COMPLETE(message.conversationId, message.id, preExistingAssistant);
+      return preExistingAssistant;
+    }
+
     const assistantMessage = await prisma.message.create({
       data: {
         conversationId: message.conversationId,
@@ -335,7 +401,7 @@ async function processAndRespondToMessage(message) {
       data: { status: 'completed', error: null }
     });
 
-    // Emit WebSocket event: AI response complete (includes user message update)
+    // Emit WebSocket event: AI response complete
     MessageEvents.AI_RESPONSE_COMPLETE(message.conversationId, message.id, assistantMessage);
 
     return assistantMessage;

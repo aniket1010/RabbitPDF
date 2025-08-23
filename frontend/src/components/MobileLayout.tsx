@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FileText, MessageCircle, Menu, X, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import SeamlessDocumentViewer from './SeamlessDocumentViewer';
 import ChatPanel from './ChatPanel';
 import Sidebar from './Sidebar';
+import { getConversationDetails } from '@/services/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface MobileLayoutProps {
   conversationId: string;
@@ -21,6 +23,69 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
   const [showSidebar, setShowSidebar] = useState(false);
   const [isClosingSidebar, setIsClosingSidebar] = useState(false);
   const router = useRouter();
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [lastKnownStatus, setLastKnownStatus] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const { socket } = useWebSocket();
+
+  useEffect(() => {
+    const loadConversationDetails = async () => {
+      try {
+        const details = await getConversationDetails(conversationId);
+        if (details?.processingStatus) {
+          setLastKnownStatus(details.processingStatus);
+          setIsProcessing(details.processingStatus === 'pending' || details.processingStatus === 'processing');
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    if (conversationId) loadConversationDetails();
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    if (isProcessing && !pollingRef.current) {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const details = await getConversationDetails(conversationId);
+          if (details?.processingStatus && details.processingStatus !== lastKnownStatus) {
+            setLastKnownStatus(details.processingStatus);
+            const active = details.processingStatus === 'pending' || details.processingStatus === 'processing';
+            setIsProcessing(active);
+            if (!active && pollingRef.current) {
+              clearInterval(pollingRef.current as unknown as number);
+              pollingRef.current = null;
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 2500) as unknown as NodeJS.Timeout;
+    }
+    return () => {
+      if (pollingRef.current && !isProcessing) {
+        clearInterval(pollingRef.current as unknown as number);
+        pollingRef.current = null;
+      }
+    };
+  }, [conversationId, isProcessing, lastKnownStatus]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleComplete = () => {
+      setIsProcessing(false);
+      setLastKnownStatus('completed');
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current as unknown as number);
+        pollingRef.current = null;
+      }
+    };
+    socket.on('pdf-processing-complete', handleComplete);
+    return () => {
+      socket.off('pdf-processing-complete', handleComplete);
+    };
+  }, [socket]);
 
   const handleViewPDF = () => {
     setCurrentView('pdf');

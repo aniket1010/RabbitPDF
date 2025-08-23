@@ -6,7 +6,7 @@ const { getBatchEmbeddings } = require('../services/embedding');
 const { batchUpsertEmbeddings } = require('../services/pinecone');
 const { validatePDF } = require('../middleware/validation');
 const { verifyAuth } = require('../utils/auth');
-const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
+// Note: Removed heavy text splitter dependency; using lightweight chunking
 const path = require('path');
 const fs = require('fs');
 
@@ -28,85 +28,77 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 const router = express.Router();
 
-// New robust chunking function using coordinates from pdf.js
-function chunkPdfWithCoordinates(pageInfo, conversationId) {
-    console.log(`🧠 [${conversationId}] Starting coordinate-based chunking for ${pageInfo.length} pages.`);
-    const allChunks = [];
-
-    if (!pageInfo || pageInfo.length === 0) {
-        console.error(`❌ [${conversationId}] No page info available for coordinate-based chunking.`);
+// Lightweight per-page chunking (no coordinates)
+function chunkPdfByPage(pageTexts, conversationId) {
+    if (!Array.isArray(pageTexts) || pageTexts.length === 0) {
+        console.error(`❌ [${conversationId}] No page texts available for chunking.`);
         return [];
     }
 
-    const MIN_CHUNK_LENGTH = 40; // Chunks with less than 40 chars are likely noise.
-    const PARA_BREAK_THRESHOLD = 1.5; // If vertical gap is > 1.5x line height, it's a new paragraph.
+    const MIN_CHUNK_LENGTH = 80; // ignore tiny fragments
+    const TARGET_LEN = 1000; // characters per chunk
+    const OVERLAP = 120; // characters overlap when slicing long paragraphs
 
-    pageInfo.forEach((page, pageIndex) => {
-        if (!page || !page.textItems || page.textItems.length === 0) {
-            return;
-        }
+    const chunks = [];
 
-        // Sort text items by Y, then X, to ensure correct reading order
-        const sortedItems = [...page.textItems].sort((a, b) => {
-            if (Math.abs(a.y - b.y) > 5) { // Group by line
-                return b.y - a.y; // Higher Y is higher on page
+    pageTexts.forEach((page, idx) => {
+        if (!page || !page.text || !page.text.trim()) return;
+        const pageNumber = page.pageNumber || (idx + 1);
+        const sectionTitle = deriveSectionTitle(page.text);
+
+        // Split by paragraph breaks (two or more newlines)
+        const paragraphs = page.text.split(/\n\s*\n+/);
+        let buffer = '';
+
+        const flushBuffer = () => {
+            const text = buffer.replace(/\s+/g, ' ').trim();
+            if (text.length >= MIN_CHUNK_LENGTH) {
+                chunks.push({ text, pageNumber, sectionTitle });
             }
-            return a.x - b.x; // Then left-to-right
-        });
-
-        let currentChunk = {
-            text: '',
-            pageNumber: pageIndex + 1,
-            items: [],
+            buffer = '';
         };
 
-        for (let i = 0; i < sortedItems.length; i++) {
-            const item = sortedItems[i];
-            const prevItem = i > 0 ? sortedItems[i-1] : null;
-            
-            let isNewParagraph = false;
-            if (prevItem) {
-                const verticalGap = Math.abs(item.y - prevItem.y);
-                const avgLineHeight = (item.height + prevItem.height) / 2 || item.height;
-                
-                if (verticalGap > avgLineHeight * PARA_BREAK_THRESHOLD) {
-                    isNewParagraph = true;
+        for (const para of paragraphs) {
+            const paraText = para.replace(/\s+/g, ' ').trim();
+            if (!paraText) continue;
+
+            if ((buffer + ' ' + paraText).length <= TARGET_LEN) {
+                buffer = (buffer ? buffer + ' ' : '') + paraText;
+            } else {
+                if (buffer) flushBuffer();
+                // If a single paragraph is too long, hard-split with overlap
+                let start = 0;
+                while (start < paraText.length) {
+                    const end = Math.min(start + TARGET_LEN, paraText.length);
+                    const slice = paraText.slice(start, end);
+                    const text = slice.replace(/\s+/g, ' ').trim();
+                    if (text.length >= MIN_CHUNK_LENGTH) {
+                        chunks.push({ text, pageNumber, sectionTitle });
+                    }
+                    if (end >= paraText.length) break;
+                    start = Math.max(0, end - OVERLAP);
                 }
             }
-
-            if (isNewParagraph) {
-                // Finalize previous chunk
-                const trimmedText = currentChunk.text.replace(/\s+/g, ' ').trim();
-                if (trimmedText.length >= MIN_CHUNK_LENGTH) {
-                    // Consolidate coordinates before pushing
-                    currentChunk.coordinates = currentChunk.items.map(it => ({
-                        x: it.x, y: it.y, width: it.width, height: it.height
-                    }));
-                    delete currentChunk.items;
-                    currentChunk.text = trimmedText;
-                    allChunks.push(currentChunk);
-                }
-                // Start new chunk
-                currentChunk = { text: '', pageNumber: pageIndex + 1, items: [] };
-            }
-
-            currentChunk.text += item.text + ' ';
-            currentChunk.items.push(item);
         }
-        
-        // Finalize the last chunk on the page
-        const trimmedText = currentChunk.text.replace(/\s+/g, ' ').trim();
-        if (trimmedText.length >= MIN_CHUNK_LENGTH) {
-            currentChunk.coordinates = currentChunk.items.map(it => ({
-                x: it.x, y: it.y, width: it.width, height: it.height
-            }));
-            delete currentChunk.items;
-            currentChunk.text = trimmedText;
-            allChunks.push(currentChunk);
-        }
+
+        if (buffer) flushBuffer();
     });
 
-    return allChunks;
+    return chunks;
+}
+
+// Simple heuristic: take the first line if it looks like a heading (short, Title Case)
+function deriveSectionTitle(pageText) {
+    try {
+        if (!pageText) return '';
+        const firstLine = String(pageText).split(/\n/)[0].trim();
+        if (!firstLine) return '';
+        if (firstLine.length > 120) return '';
+        const looksLikeTitle = /[A-Za-z]/.test(firstLine) && firstLine.split(' ').filter(Boolean).length <= 12;
+        return looksLikeTitle ? firstLine : '';
+    } catch {
+        return '';
+    }
 }
 
 router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res) => {
@@ -118,17 +110,7 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     const mimetype = req.file.mimetype;
     const size = req.file.size;
 
-    // Parse PDF
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer, {
-      max: 0, // No page limit
-      pagerender: renderPage
-    });
-
-    const text = data.text.trim();
-    if (!text) {
-      return res.status(400).json({ error: 'No text content found in PDF' });
-    }
+    // Defer PDF parsing to background for faster response
 
     // Create conversation immediately with user ID
     // Validate required user information
@@ -194,8 +176,24 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     // Return conversation ID immediately
     res.json({ conversationId: conversation.id });
 
-    // Start background processing
-    processPdfInBackground(text, conversation.id, originalName);
+    // Start background processing (feature-flag scaffold for future queue)
+    const useQueue = String(process.env.USE_QUEUE).toLowerCase() === 'true';
+    if (useQueue) {
+      console.log(`🚧 [Upload] USE_QUEUE enabled, enqueuing process for conversation ${conversation.id}`);
+      try {
+        const { pdfProcessingQueue } = require('../queues/pdfProcessingQueue');
+        await pdfProcessingQueue.add(
+          'process-pdf',
+          { filePath, conversationId: conversation.id, originalName },
+          { attempts: 3, backoff: { type: 'exponential', delay: 1000 } }
+        );
+      } catch (e) {
+        console.warn('⚠️ [Upload] Queue unavailable, falling back to inline processing:', e?.message);
+        processPdfInBackground(filePath, conversation.id, originalName);
+      }
+    } else {
+      processPdfInBackground(filePath, conversation.id, originalName);
+    }
 
   } catch (error) {
     console.error('❌ PDF upload failed:', error);
@@ -219,8 +217,8 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
   }
 });
 
-// Asynchronous background processing function
-async function processPdfInBackground(text, conversationId, originalName) {
+// Asynchronous background processing function (kept for fallback)
+async function processPdfInBackground(filePath, conversationId, originalName) {
     try {
         // Set status to processing
         await prisma.conversation.update({
@@ -228,33 +226,46 @@ async function processPdfInBackground(text, conversationId, originalName) {
             data: { processingStatus: 'processing' }
         });
 
-        // Text chunking with new coordinate-based method
-        const coordinateChunks = chunkPdfWithCoordinates(global.pdfPageInfo || [], conversationId);
-        const chunks = coordinateChunks.map(chunk => chunk.text); // For embedding
-        
-        // Add debugging for page info state
-        if (!global.pdfPageInfo || global.pdfPageInfo.length === 0) {
-            console.error(`❌ [${conversationId}] CRITICAL: PDF page info missing during chunking!`);
+        // Read and parse PDF (async, non-blocking)
+        const dataBuffer = await fs.promises.readFile(filePath);
+        const data = await pdfParse(dataBuffer, {
+            max: 0,
+            pagerender: renderPage
+        });
+
+        const docText = (data.text || '').trim();
+        if (!docText) {
+            console.error(`❌ [${conversationId}] No text content found in PDF`);
+            await prisma.conversation.update({
+                where: { id: conversationId },
+                data: { processingStatus: 'failed' }
+            });
+            return;
         }
+
+        // Build page texts and chunk per page (no coordinates)
+        const pageTexts = Array.isArray(global.pageTexts) ? global.pageTexts : [];
+        const pageChunks = chunkPdfByPage(pageTexts, conversationId);
+        const chunks = pageChunks.map(c => c.text);
 
         // Generate embeddings
         const embeddings = await getBatchEmbeddings(chunks);
         const embeddingResults = embeddings.map((embedding, index) => ({
             embedding,
             chunk: chunks[index],
-            ...coordinateChunks[index],
-            index
+            pageNumber: pageChunks[index]?.pageNumber || 1,
+            chunkIndex: index
         }));
 
-        // Upsert to Pinecone with coordinate metadata
+        // Upsert to Pinecone with minimal metadata
         const vectorDataArray = embeddingResults.map((result) => ({
-            id: `${conversationId}-${result.index}`,
+            id: `${conversationId}-${result.chunkIndex}`,
             vector: result.embedding,
             text: result.chunk,
             conversationId: conversationId,
             pageNumber: result.pageNumber,
-            // Convert to string for Pinecone
-            coordinates: JSON.stringify(result.coordinates)
+            chunkIndex: result.chunkIndex,
+            sectionTitle: pageChunks[result.chunkIndex]?.sectionTitle || ''
         }));
         
         await batchUpsertEmbeddings(vectorDataArray);
@@ -269,8 +280,22 @@ async function processPdfInBackground(text, conversationId, originalName) {
         const { MessageEvents } = require('../websocket');
         MessageEvents.PDF_PROCESSING_COMPLETE(conversationId);
         
-        // Process any pending messages
-        await processPendingMessages(conversationId);
+        // Process pending messages (non-queue path)
+        try {
+          const { processAndRespondToMessage } = require('../services/messageProcessor');
+          const pendingMessages = await prisma.message.findMany({
+            where: { conversationId, status: 'pending', role: 'user' },
+            orderBy: { createdAt: 'asc' },
+          });
+          
+          console.log(`🔄 [Upload] Processing ${pendingMessages.length} pending messages`);
+          
+          for (const message of pendingMessages) {
+            await processAndRespondToMessage(message);
+          }
+        } catch (messageError) {
+          console.error(`❌ [Upload] Error processing pending messages:`, messageError);
+        }
         
         // Optional: Test reference accuracy in development
         if (process.env.NODE_ENV !== 'production') {
@@ -297,73 +322,28 @@ async function processPdfInBackground(text, conversationId, originalName) {
     }
 }
 
-// Process pending messages when processing completes
-async function processPendingMessages(conversationId) {
-    try {
-        const pendingMessages = await prisma.message.findMany({
-            where: {
-                conversationId: conversationId,
-                status: 'pending',
-                role: 'user'
-            },
-            orderBy: { createdAt: 'asc' }
-        });
 
-        const { processAndRespondToMessage } = require('../services/messageProcessor');
-
-        for (const message of pendingMessages) {
-            try {
-                const assistantMessage = await processAndRespondToMessage(message);
-                if (!assistantMessage) {
-                    console.log(`❌ [${conversationId}] Failed to create assistant response for pending message ${message.id}`);
-                }
-            } catch (error) {
-                console.error(`❌ [${conversationId}] Error processing pending message ${message.id}:`, error);
-                // Mark message as error
-                await prisma.message.update({
-                    where: { id: message.id },
-                    data: { status: 'error', error: error.message }
-                });
-            }
-        }
-    } catch (error) {
-        console.error(`❌ [${conversationId}] Error processing pending messages:`, error);
-    }
-}
 
 // Enhanced PDF page renderer function with position tracking
 function renderPage(pageData) {
     return pageData.getTextContent()
         .then(function(textContent) {
             let lastY, text = '';
-            const pageInfo = {
-                pageNumber: pageData.pageIndex + 1, // 1-based page numbering
-                textItems: []
-            };
-            
             for (let item of textContent.items) {
                 if (lastY != item.transform[5] && text) {
                     text += '\n';
                 }
-                
-                // Store position information for each text item
-                pageInfo.textItems.push({
-                    text: item.str,
-                    x: item.transform[4],
-                    y: item.transform[5],
-                    width: item.width,
-                    height: item.height
-                });
-                
-                text += item.str;
+                // Normalize hyphenated line breaks: "word-\nnext" -> "wordnext"
+                const normalized = String(item.str)
+                    .replace(/\s+/g, ' ');
+                text += normalized;
                 lastY = item.transform[5];
             }
-            
-            // Store page info in global object with timestamp for debugging
-            if (!global.pdfPageInfo) global.pdfPageInfo = [];
-            global.pdfPageInfo[pageData.pageIndex] = pageInfo;
-            global.pdfPageInfoTimestamp = Date.now(); // Track when this was set
-            
+            if (!global.pageTexts) global.pageTexts = [];
+            global.pageTexts[pageData.pageIndex] = {
+                pageNumber: pageData.pageIndex + 1,
+                text
+            };
             return text;
         });
 }

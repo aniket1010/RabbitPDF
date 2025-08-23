@@ -14,6 +14,7 @@ const uploadRoutes = require('./routes/upload');
 // Import middleware
 const corsConfig = require('./config/cors');
 const { setupWebSocket } = require('./websocket');
+const prisma = require('./prismaClient');
 
 const app = express();
 const server = createServer(app);
@@ -61,6 +62,59 @@ app.use('/user', userRoutes);
 app.use('/conversation', conversationRoutes);
 app.use('/chat', chatRoutes);
 app.use('/upload', uploadRoutes);
+
+// Internal API endpoints (for worker communication)
+app.post('/internal/pdf-complete', async (req, res) => {
+  try {
+    const { conversationId } = req.body;
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId required' });
+    }
+    
+    console.log(`📡 [Internal] PDF completion notification for ${conversationId}`);
+    
+    // Emit WebSocket event for PDF completion
+    const { MessageEvents } = require('./websocket');
+    MessageEvents.PDF_PROCESSING_COMPLETE(conversationId);
+    
+    // Process any pending messages now that PDF is ready
+    try {
+      const { processAndRespondToMessage } = require('./services/messageProcessor');
+      const pendingMessages = await prisma.message.findMany({
+        where: { conversationId, status: 'pending', role: 'user' },
+        orderBy: { createdAt: 'asc' },
+      });
+      
+      console.log(`🔄 [Internal] Pending messages: ${pendingMessages.length}`);
+
+      if (pendingMessages.length > 0) {
+        // Process the first pending message immediately to reduce perceived latency
+        await processAndRespondToMessage(pendingMessages[0]);
+
+        // Process the rest in the background without blocking the response
+        const remaining = pendingMessages.slice(1);
+        if (remaining.length > 0) {
+          setImmediate(async () => {
+            for (const msg of remaining) {
+              try {
+                await processAndRespondToMessage(msg);
+              } catch (e) {
+                console.warn(`⚠️ [Internal] Background pending processing error for ${msg.id}:`, e?.message);
+              }
+            }
+          });
+        }
+      }
+    } catch (messageError) {
+      console.error(`❌ [Internal] Error processing pending messages:`, messageError);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ [Internal] PDF completion error:', error);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
 
 // Root endpoint
 app.get('/', (req, res) => {

@@ -6,6 +6,7 @@ import MobileLayout from './MobileLayout';
 import SeamlessDocumentViewer from './SeamlessDocumentViewer';
 import ChatPanel from './ChatPanel';
 import { getConversationDetails } from '@/services/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { stripPdfExtension } from '@/lib/utils';
 
 interface ResponsiveLayoutProps {
@@ -16,6 +17,12 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   const [isMobile, setIsMobile] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [pdfTitle, setPdfTitle] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [lastKnownStatus, setLastKnownStatus] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // WebSocket (for processing-complete signal)
+  const { socket, isConnected } = useWebSocket();
 
   console.log('🚀 [ResponsiveLayout] Rendering with conversationId:', conversationId);
 
@@ -66,6 +73,10 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
       try {
         const details = await getConversationDetails(conversationId);
         setPdfTitle(details.title || details.fileName || '');
+        if (details.processingStatus) {
+          setLastKnownStatus(details.processingStatus);
+          setIsProcessing(details.processingStatus === 'pending' || details.processingStatus === 'processing');
+        }
       } catch (error) {
         console.error('Failed to load conversation details:', error);
       }
@@ -75,6 +86,58 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
       loadConversationDetails();
     }
   }, [conversationId]);
+
+  // Poll processing status until complete (WS optional optimization)
+  useEffect(() => {
+    if (!conversationId) return;
+
+    // Start polling whenever we're in a processing state
+    if (isProcessing && !pollingRef.current) {
+      pollingRef.current = setInterval(async () => {
+        try {
+          const details = await getConversationDetails(conversationId);
+          if (details?.processingStatus && details.processingStatus !== lastKnownStatus) {
+            setLastKnownStatus(details.processingStatus);
+            const active = details.processingStatus === 'pending' || details.processingStatus === 'processing';
+            setIsProcessing(active);
+            if (!active && pollingRef.current) {
+              clearInterval(pollingRef.current as unknown as number);
+              pollingRef.current = null;
+            }
+          }
+        } catch (e) {
+          // Ignore transient errors during polling
+        }
+      }, 2500) as unknown as NodeJS.Timeout;
+    }
+
+    return () => {
+      if (pollingRef.current && !isProcessing) {
+        clearInterval(pollingRef.current as unknown as number);
+        pollingRef.current = null;
+      }
+    };
+  }, [conversationId, isProcessing, lastKnownStatus]);
+
+  // WebSocket listener for processing completion
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleComplete = () => {
+      setIsProcessing(false);
+      setLastKnownStatus('completed');
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current as unknown as number);
+        pollingRef.current = null;
+      }
+    };
+
+    socket.on('pdf-processing-complete', handleComplete);
+
+    return () => {
+      socket.off('pdf-processing-complete', handleComplete);
+    };
+  }, [socket]);
 
   const handleConversationUpdate = (updatedConversationId: string, newTitle: string) => {
     if (updatedConversationId === conversationId) {

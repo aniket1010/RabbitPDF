@@ -56,7 +56,8 @@ IMPORTANT:
 - Every piece of information from the context MUST have a page citation
 - Use only the page numbers that are explicitly provided in the context
 - Balance detail with conciseness - be thorough but not verbose
-- Maintain conversation flow and reference previous discussions when relevant`
+- Maintain conversation flow and reference previous discussions when relevant
+- Ignore any "Table of Contents" or "Index" sections that just list topics or page numbers`
     },
     {
       role: "user",

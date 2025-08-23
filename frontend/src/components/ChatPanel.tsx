@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Send, Bot, User, Menu, File } from "lucide-react"
 
-import { getConversationMessages, sendChatMessage } from "@/services/api"
+import { getConversationMessages, sendChatMessage, getConversationDetails } from "@/services/api"
 import HtmlRenderer from "./HtmlRenderer"
 import { stripPdfExtension } from "@/lib/utils"
 import { useWebSocket } from "@/hooks/useWebSocket"
@@ -49,8 +49,29 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const httpAssistantFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasPending = messages.some(m => m.isUser && m.status === 'pending')
+  const [isPdfProcessing, setIsPdfProcessing] = useState<boolean>(false)
+  const [hasUserSentDuringProcessing, setHasUserSentDuringProcessing] = useState<boolean>(false)
 
   console.log('💬 [ChatPanel] Rendering with conversationId:', conversationId, 'pdfTitle:', pdfTitle);
+
+  // Consistent subtle dotted circular spinner
+  const Spinner = ({ size = 'md', color = '#111827' }: { size?: 'sm' | 'md' | 'lg'; color?: string }) => {
+    const px = size === 'sm' ? 16 : size === 'lg' ? 28 : 20
+    return (
+      <div
+        className="rounded-full animate-spin"
+        style={{
+          width: px,
+          height: px,
+          borderWidth: 2,
+          borderStyle: 'dotted',
+          borderColor: color,
+          borderTopColor: 'transparent',
+        }}
+      />
+    )
+  }
 
   // WebSocket hook
   const { socket, isConnected, joinConversation, leaveConversation, onConversationRenamed } = useWebSocket()
@@ -59,6 +80,20 @@ export default function ChatPanel({
   useEffect(() => {
     setCurrentTitle(pdfTitle)
   }, [pdfTitle])
+
+  // Initial processing status check per conversation
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        if (!conversationId) return
+        const details = await getConversationDetails(conversationId)
+        const status = String(details?.processingStatus || '').toLowerCase()
+        setIsPdfProcessing(status === 'pending' || status === 'processing')
+        setHasUserSentDuringProcessing(false)
+      } catch {}
+    }
+    loadStatus()
+  }, [conversationId])
 
   // Listen for conversation rename events
   useEffect(() => {
@@ -130,23 +165,25 @@ export default function ChatPanel({
         const exists = prev.some(m => m.id === assistantMessage.id)
         if (exists) return prev
         
-        // Update the specific user message that was processed (if userMessageId is provided)
-        const updatedMessages = data.userMessageId 
+        // Prefer exact mapping using messageId provided by backend
+        const updatedMessages = (data.messageId
           ? prev.map(msg => {
-              if (msg.id === data.userMessageId && msg.status === 'pending') {
+              if (msg.id === data.messageId && msg.status === 'pending') {
                 console.log(`🔄 [WebSocket] Updating user message ${msg.id} from pending to completed`)
                 return { ...msg, status: 'completed' as const }
               }
               return msg
             })
-          : prev.map(msg => {
-              // Fallback: update any pending user message
-              if (msg.status === 'pending' && msg.isUser) {
-                console.log(`🔄 [WebSocket] Updating pending user message ${msg.id} to completed`)
-                return { ...msg, status: 'completed' as const }
-              }
-              return msg
-            })
+          : prev
+        ).map(msg => {
+          // Fallback: if any pending messages remain and no messageId matched, mark the oldest pending as completed
+          if (data.messageId) return msg
+          if (msg.status === 'pending' && msg.isUser) {
+            console.log(`🔄 [WebSocket] Fallback update pending user message ${msg.id} to completed`)
+            return { ...msg, status: 'completed' as const }
+          }
+          return msg
+        })
         
         const newMessages = [...updatedMessages, assistantMessage]
         
@@ -192,6 +229,9 @@ export default function ChatPanel({
     const handlePDFProcessingComplete = (data: any) => {
       console.log('✅ [WebSocket] PDF processing complete')
       
+      setIsPdfProcessing(false)
+      setHasUserSentDuringProcessing(false)
+      
       // Check if we have pending messages that will now be processed
       const pendingCount = messages.filter(m => m.status === 'pending').length
       if (pendingCount > 0) {
@@ -201,6 +241,8 @@ export default function ChatPanel({
       
       // Refresh messages to get any newly processed pending messages
       loadMessages()
+
+      // Do not trigger server-side processing from client; server will handle it.
     }
 
     const handlePendingMessagesProcessed = (data: any) => {
@@ -263,6 +305,24 @@ export default function ChatPanel({
     scrollToBottom()
   }, [messages])
 
+  // Poll messages while there are pending user messages (read-only refresh)
+  useEffect(() => {
+    if (!conversationId) return
+    if (!hasPending) return
+    const interval = setInterval(async () => {
+      try {
+        const details = await getConversationDetails(conversationId)
+        const status = String(details?.processingStatus || '').toLowerCase()
+        const processing = status === 'pending' || status === 'processing'
+        setIsPdfProcessing(processing)
+        await loadMessages()
+      } catch {
+        // ignore transient errors
+      }
+    }, 1800)
+    return () => clearInterval(interval as unknown as number)
+  }, [conversationId, hasPending])
+
   const loadMessages = useCallback(async () => {
     if (!conversationId) return
     console.log('Loading messages for conversation:', conversationId)
@@ -303,7 +363,8 @@ export default function ChatPanel({
 
   const handleSendMessage = async (messageText?: string) => {
     const text = (messageText || inputMessage).trim()
-    if (text && !isLoading && !isAnalyzing) {
+    if (text && !isLoading) {
+      if (isPdfProcessing) setHasUserSentDuringProcessing(true)
       setInputMessage("")
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto"
@@ -385,7 +446,7 @@ export default function ChatPanel({
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -428,11 +489,6 @@ export default function ChatPanel({
             <div>
                           <div className="flex items-center gap-2">
               <h3 className="text-xs font-semibold text-black/60 uppercase tracking-wider">AI Assistant</h3>
-              {isConnected ? (
-                <div className="w-2 h-2 bg-green-400 rounded-full" title="WebSocket connected - real-time updates" />
-              ) : (
-                <div className="w-2 h-2 bg-yellow-400 rounded-full" title="WebSocket disconnected - manual refresh needed" />
-              )}
               {/* Show pending message indicator */}
               {messages.filter(m => m.status === 'pending').length > 0 && (
                 <div className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">
@@ -458,15 +514,12 @@ export default function ChatPanel({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <div className="relative flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {isLoading && messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center animate-fade-in">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg animate-pulse"
-                style={{ backgroundColor: "#C0C9EE" }}
-              >
-                <Bot className="w-8 h-8 text-black" />
+              <div className="flex items-center justify-center mb-4">
+                <Spinner size="lg" />
               </div>
               <p className="text-black/70 font-medium">Loading conversation...</p>
             </div>
@@ -544,6 +597,11 @@ export default function ChatPanel({
                       )}
                     </div>
                   </div>
+                  {message.isUser && message.status === 'pending' && (
+                    <span className="ml-2 px-2 py-0.5 text-[10px] sm:text-xs rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200 self-center">
+                      Queued
+                    </span>
+                  )}
                 </div>
                 <div className={`text-xs text-black/50 mt-1 ${message.isUser ? "mr-8 sm:mr-11" : "ml-8 sm:ml-11"}`}>
                   {message.timestamp instanceof Date
@@ -563,17 +621,7 @@ export default function ChatPanel({
                   </div>
                   <div className="bg-white px-3 py-2 rounded-2xl rounded-tl-md shadow-lg border border-black/5">
                     <div className="flex items-center space-x-3">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-black/40 rounded-full animate-bounce"></div>
-                        <div
-                          className="w-2 h-2 bg-black/40 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.1s" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 bg-black/40 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.2s" }}
-                        ></div>
-                      </div>
+                      <Spinner size="sm" />
                       <span className="text-sm text-black/70 font-medium">Analyzing...</span>
                     </div>
                   </div>
@@ -582,6 +630,25 @@ export default function ChatPanel({
             )}
             <div ref={messagesEndRef} />
           </>
+        )}
+        {isPdfProcessing && !hasUserSentDuringProcessing && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 border border-gray-200 shadow-sm">
+              <span
+                className="animate-spin"
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  display: 'inline-block',
+                  borderTop: '3px solid #FFF',
+                  borderRight: '3px solid transparent',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <p className="text-sm text-black/70 font-medium">Processing your document… Feel free to ask now, we’ll reply once it’s finished.</p>
+            </div>
+          </div>
         )}
       </div>
 
@@ -593,17 +660,17 @@ export default function ChatPanel({
               ref={textareaRef}
               value={inputMessage}
               onChange={handleInputChange}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder="Ask me anything about your document..."
               className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-black/10 rounded-2xl bg-white text-black placeholder-black/50 focus:outline-none focus:border-black/30 resize-none text-sm transition-all duration-200 font-medium shadow-sm"
               rows={1}
-              disabled={isLoading || isAnalyzing}
+              disabled={false}
               style={{ minHeight: "44px", maxHeight: "120px" }}
             />
           </div>
           <button
             onClick={() => handleSendMessage()}
-            disabled={!inputMessage.trim() || isLoading || isAnalyzing}
+            disabled={!inputMessage.trim()}
             className="w-11 h-11 sm:w-12 sm:h-12 bg-black text-white rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center group shadow-lg hover:bg-black/90 transition-all duration-200 flex-shrink-0"
           >
             <Send className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-200 group-hover:scale-110 group-hover:translate-x-0.5" />
