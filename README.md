@@ -1,4 +1,4 @@
-# ChatPDF
+# RabbitPDF
 
 A full-stack application that allows users to upload PDF documents and chat with them using AI. Built with Next.js, Express.js, and PostgreSQL.
 
