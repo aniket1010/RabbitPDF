@@ -22,6 +22,7 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
   const [currentView, setCurrentView] = useState<MobileView>('chat');
   const [showSidebar, setShowSidebar] = useState(false);
   const [isClosingSidebar, setIsClosingSidebar] = useState(false);
+  const [referenceClick, setReferenceClick] = useState<{pageNumber: number, coordinates: any[]} | null>(null);
   const router = useRouter();
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [lastKnownStatus, setLastKnownStatus] = useState<string | null>(null);
@@ -95,6 +96,22 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
     setCurrentView('chat');
   };
 
+  // Handle reference clicks in mobile - switch to PDF view and navigate to page
+  const handleReferenceClick = (pageNumber: number) => {
+    console.log(`📱 [MobileLayout] Reference clicked: Page ${pageNumber} - switching to PDF view`);
+    const referenceData = { pageNumber, coordinates: [] };
+    console.log(`📱 [MobileLayout] Setting referenceClick state:`, referenceData);
+    setReferenceClick(referenceData);
+    setCurrentView('pdf');
+    console.log(`📱 [MobileLayout] Switched to PDF view, referenceClick should be passed to SeamlessDocumentViewer`);
+  };
+
+  // Callback to clear reference click after processing
+  const handleReferenceProcessed = () => {
+    console.log(`📱 [MobileLayout] Reference processed, clearing referenceClick state`);
+    setReferenceClick(null);
+  };
+
   const handleToggleSidebar = () => {
     if (showSidebar) {
       // Start closing animation
@@ -116,8 +133,15 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
     return (
       <>
         <div className="flex flex-col h-full bg-gradient-to-br from-white to-gray-50">
-          {/* PDF Header */}
-          <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200 shadow-sm">
+          {/* PDF Header - use CSS transform for performance */}
+          <div 
+            className="flex items-center justify-between p-4 bg-white border-b border-gray-200 shadow-sm sticky top-0 z-[120] transition-transform duration-300 ease-out" 
+            data-pdf-sticky-header="true"
+            style={{
+              transform: showSidebar ? 'translateY(-100%)' : 'translateY(0)',
+              willChange: 'transform'
+            }}
+          >
             <div className="flex items-center gap-3">
               <button
                 onClick={handleToggleSidebar}
@@ -129,7 +153,9 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#C0C9EE" }}>
                   <FileText className="w-4 h-4 text-gray-700" />
                 </div>
-                <h2 className="text-lg font-semibold text-gray-800">Document</h2>
+                <h2 className="text-lg font-semibold text-gray-800 truncate max-w-xs">
+                  {pdfTitle || "Document"}
+                </h2>
               </div>
             </div>
             <button
@@ -143,30 +169,32 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
 
           {/* Seamless Document Viewer */}
           <div className="flex-1 overflow-hidden">
-            <SeamlessDocumentViewer conversationId={conversationId} pdfTitle={pdfTitle} />
+            <SeamlessDocumentViewer 
+              conversationId={conversationId} 
+              pdfTitle={pdfTitle}
+              referenceClick={referenceClick}
+              onReferenceProcessed={handleReferenceProcessed}
+              isMobileView={true}
+            />
           </div>
         </div>
 
-                  {/* Mobile Sidebar Full Screen */}
+                  {/* Mobile Sidebar Full Screen with improved z-index */}
           {showSidebar && (
             <>
               <div 
-                className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+                className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm touch-none transition-opacity duration-300 ease-out"
                 onClick={handleToggleSidebar}
                 style={{
-                  animation: isClosingSidebar 
-                    ? 'fade-out 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards'
-                    : 'fade-in 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards',
+                  opacity: isClosingSidebar ? 0 : 1,
+                  willChange: 'opacity'
                 }}
               />
               <div 
-                className="fixed inset-0 z-50 bg-white"
+                className="fixed inset-0 z-[110] bg-white touch-auto transition-transform duration-300 ease-out"
                 style={{
-                  animation: isClosingSidebar 
-                    ? 'slideOutSmooth 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards'
-                    : 'slideInSmooth 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards',
-                  transform: 'translate3d(0, 0, 0)',
-                  willChange: 'transform, opacity',
+                  transform: isClosingSidebar ? 'translateX(-100%)' : 'translateX(0)',
+                  willChange: 'transform',
                   backfaceVisibility: 'hidden',
                 }}
               >
@@ -193,29 +221,29 @@ export default function MobileLayout({ conversationId, pdfTitle, onConversationU
             pdfTitle={pdfTitle}
             onToggleSidebar={handleToggleSidebar}
             onViewPDF={handleViewPDF}
+            onReferenceClick={handleReferenceClick}
             showMobileControls={true}
           />
         </div>
       </div>
 
-              {/* Mobile Sidebar Full Screen */}
+              {/* Mobile Sidebar Full Screen - consistent with PDF view */}
         {showSidebar && (
           <>
             <div 
-              className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+              className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm touch-none transition-opacity duration-300 ease-out"
               onClick={handleToggleSidebar}
               style={{
-                animation: isClosingSidebar 
-                  ? 'fade-out 0.3s ease-out forwards'
-                  : 'fade-in 0.3s ease-out forwards',
+                opacity: isClosingSidebar ? 0 : 1,
+                willChange: 'opacity'
               }}
             />
             <div 
-              className="fixed inset-0 z-50 bg-white"
+              className="fixed inset-0 z-[110] bg-white touch-auto transition-transform duration-300 ease-out"
               style={{
-                animation: isClosingSidebar 
-                  ? 'slideOutSmooth 0.3s ease-out forwards'
-                  : 'slideInSmooth 0.3s ease-out forwards',
+                transform: isClosingSidebar ? 'translateX(-100%)' : 'translateX(0)',
+                willChange: 'transform',
+                backfaceVisibility: 'hidden',
               }}
             >
               <Sidebar 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, memo } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import PreviewPDF from './PreviewPDF';
 
@@ -17,6 +17,7 @@ interface SeamlessDocumentViewerProps {
   onReferenceClick?: (pageNumber: number, coordinates: Coordinate[]) => void;
   referenceClick?: { pageNumber: number, coordinates: Coordinate[] } | null;
   onReferenceProcessed?: () => void;
+  isMobileView?: boolean;
 }
 
 // New component to render highlights as an overlay
@@ -50,11 +51,12 @@ const HighlightLayer: React.FC<{ highlights: { pageNumber: number; coordinates: 
     );
 };
 
-export default function SeamlessDocumentViewer({ 
+const SeamlessDocumentViewer = memo(function SeamlessDocumentViewer({ 
   conversationId, 
   pdfTitle, 
   referenceClick,
-  onReferenceProcessed
+  onReferenceProcessed,
+  isMobileView = false
 }: SeamlessDocumentViewerProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPdfPages, setTotalPdfPages] = useState(0);
@@ -65,6 +67,7 @@ export default function SeamlessDocumentViewer({
   const [inputValue, setInputValue] = useState('1');
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
   const [prevConversationId, setPrevConversationId] = useState<string | null>(null);
+
 
 
 
@@ -86,10 +89,19 @@ export default function SeamlessDocumentViewer({
       setCurrentPage(1);
       setInputValue('1');
       setPrevConversationId(conversationId);
-      
-
     }
   }, [conversationId, prevConversationId]);
+
+  // Jump request state specifically for reference clicks
+  const [deferredJump, setDeferredJump] = useState<number | null>(null);
+
+  const handleJumpComplete = useCallback(() => {
+    console.log('✅ [SeamlessDocumentViewer] Jump complete signal received.');
+    setDeferredJump(null);
+    if (onReferenceProcessed) {
+      onReferenceProcessed();
+    }
+  }, [onReferenceProcessed]);
 
   // Mouse event handlers
   const handleMouseEnter = useCallback(() => {
@@ -152,34 +164,32 @@ export default function SeamlessDocumentViewer({
     }
   }, [inputValue, totalPdfPages, currentPage]);
 
-
-
-  // Handle reference clicks and highlighting
+  // Handle reference clicks from chat
   useEffect(() => {
     if (referenceClick && totalPdfPages > 0) {
-        const { pageNumber, coordinates } = referenceClick;
+      const { pageNumber, coordinates } = referenceClick;
+      
+      if (pageNumber >= 1 && pageNumber <= totalPdfPages) {
+        // Add a slight delay to ensure PDF viewer is ready
+        setTimeout(() => {
+          // Navigate to the correct page
+          setCurrentPage(pageNumber);
+          setInputValue(pageNumber.toString());
+          
+          // Use the dedicated state to trigger a deferred jump in the viewer
+          setDeferredJump(pageNumber);
+          
+          // Set highlights
+          setHighlights({ pageNumber, coordinates });
 
-        if (pageNumber >= 1 && pageNumber <= totalPdfPages) {
-            console.log('🔗 [SeamlessDocumentViewer] Processing reference click to page:', pageNumber);
-            
-            // 1. Navigate to the correct page
-            setCurrentPage(pageNumber);
-            setInputValue(pageNumber.toString());
-            
-            // 2. Set navigation action flag to trigger PDF jump
-            setIsNavigationAction(true);
-            setTimeout(() => setIsNavigationAction(false), 100);
-            
-            // 3. Set highlights
-            setHighlights({ pageNumber, coordinates });
-
-            // 4. Signal that the reference has been processed
-            if (onReferenceProcessed) {
-                onReferenceProcessed();
-            }
-        } else {
-            console.error(`Invalid page number for reference click: ${pageNumber}`);
-        }
+          // Signal that the reference has been processed
+          if (onReferenceProcessed) {
+            onReferenceProcessed();
+          }
+        }, 300); // Small delay to ensure PDF is fully ready
+      } else {
+        console.error(`Invalid page number for reference click: ${pageNumber} (total pages: ${totalPdfPages})`);
+      }
     }
   }, [referenceClick, totalPdfPages, onReferenceProcessed]);
 
@@ -194,6 +204,8 @@ export default function SeamlessDocumentViewer({
           conversationId={conversationId}
           currentPage={currentPage}
           isNavigationAction={isNavigationAction}
+          deferredJumpPage={deferredJump}
+          initialPageIndex={currentPage > 0 ? currentPage - 1 : null}
           onPdfLoad={(totalPages) => {
             setTotalPdfPages(totalPages);
             setIsLoadingConversation(false);
@@ -203,20 +215,25 @@ export default function SeamlessDocumentViewer({
             setInputValue(page.toString());
           }}
           onError={() => setIsLoadingConversation(false)}
+          onJumpComplete={handleJumpComplete}
         />
         <HighlightLayer highlights={highlights} currentPage={currentPage} />
       </div>
 
-      {/* Navigation Controls */}
-      {showControls && totalPdfPages > 0 && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 px-4 py-2 flex items-center space-x-3 transition-opacity duration-200">
+      {/* Navigation Controls - Enhanced for Mobile */}
+      {(showControls || isMobileView) && totalPdfPages > 0 && (
+        <div className={`absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200 flex items-center transition-opacity duration-200 ${
+          isMobileView ? 'px-6 py-3 space-x-4' : 'px-4 py-2 space-x-3'
+        }`}>
           <button
             onClick={goToPreviousPage}
             disabled={currentPage <= 1}
-            className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+              isMobileView ? 'p-2 touch-manipulation' : 'p-1'
+            }`}
             title="Previous page"
           >
-            <FiChevronLeft size={20} />
+            <FiChevronLeft size={isMobileView ? 24 : 20} />
           </button>
           
           <div className="flex items-center space-x-2">
@@ -226,30 +243,35 @@ export default function SeamlessDocumentViewer({
               onChange={handleInputChange}
               onKeyPress={handleInputKeyPress}
               onBlur={handleInputBlur}
-              className="w-12 text-center text-sm border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={`text-center border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                isMobileView 
+                  ? 'w-16 h-10 text-base px-2 py-1' 
+                  : 'w-12 text-sm px-1 py-0.5'
+              }`}
+              inputMode="numeric"
+              pattern="[0-9]*"
             />
-            <span className="text-sm text-gray-600">of {totalPdfPages}</span>
+            <span className={`text-gray-600 ${isMobileView ? 'text-base' : 'text-sm'}`}>
+              of {totalPdfPages}
+            </span>
           </div>
           
           <button
             onClick={goToNextPage}
             disabled={currentPage >= totalPdfPages}
-            className="p-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+              isMobileView ? 'p-2 touch-manipulation' : 'p-1'
+            }`}
             title="Next page"
           >
-            <FiChevronRight size={20} />
+            <FiChevronRight size={isMobileView ? 24 : 20} />
           </button>
         </div>
       )}
 
-      {/* PDF Title */}
-      {pdfTitle && (
-        <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm border border-gray-200 px-3 py-1">
-          <span className="text-sm font-medium text-gray-700 truncate max-w-xs block">
-            {pdfTitle}
-          </span>
-        </div>
-      )}
+
     </div>
   );
-}
+});
+
+export default SeamlessDocumentViewer;

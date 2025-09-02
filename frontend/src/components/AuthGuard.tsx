@@ -4,6 +4,7 @@ import { useSession } from '@/lib/auth-client';
 import { ReactNode, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthButton from './AuthButton';
+import Spinner from './Spinner';
 
 interface AuthGuardProps {
   children: ReactNode;
@@ -29,7 +30,7 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin mx-auto h-8 w-8 border-4 border-gray-300 border-t-blue-600 rounded-full mb-4"></div>
+          <Spinner size={32} className="mx-auto mb-4" />
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>

@@ -9,6 +9,7 @@ interface HtmlRendererProps {
   isUserMessage?: boolean;
   contentType?: 'text' | 'html' | 'markdown';
   onReferenceClick?: (pageNumber: number) => void;
+  isMobileView?: boolean;
 }
 
 export default function HtmlRenderer({
@@ -16,14 +17,15 @@ export default function HtmlRenderer({
   className = '',
   isUserMessage = false,
   contentType = 'text',
-  onReferenceClick
+  onReferenceClick,
+  isMobileView = false
 }: HtmlRendererProps) {
 
   const handleClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     
-    // Handle citation button clicks
-    if (target.classList.contains('citation-button') && onReferenceClick) {
+    // Handle citation button clicks, but not in mobile view
+    if (target.classList.contains('citation-button') && onReferenceClick && !isMobileView) {
       e.preventDefault();
       e.stopPropagation();
       
@@ -72,7 +74,7 @@ export default function HtmlRenderer({
 
   return (
     <div 
-      className={`html-content ${className} ${isUserMessage ? 'user-message' : 'ai-message'}`}
+      className={`html-content ${className} ${isUserMessage ? 'user-message' : 'ai-message'} ${isMobileView ? 'mobile-citations' : ''}`}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
       onClick={handleClick}
       style={{

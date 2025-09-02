@@ -26,6 +26,7 @@ RESPONSE QUALITY GUIDELINES:
 - Connect related concepts and provide insights where helpful
 - Keep responses focused and concise - aim for thoroughness without unnecessary length
 - Use professional, clear language that's accessible to the reader
+- DO NOT use LaTeX formatting for mathematical formulas - write math in plain text (e.g., "x^2 + y^2 = z^2" instead of "\\(x^2 + y^2 = z^2\\)")
 
 CITATION RULES - MANDATORY:
 - When you use information from the provided context, you MUST cite the page number

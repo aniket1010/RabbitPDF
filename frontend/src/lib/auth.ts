@@ -7,6 +7,18 @@ import { randomUUID } from "crypto";
 // Normalized APP_URL constant with trailing slash trimming
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001").replace(/\/$/, "");
 
+// Debug environment variables loading
+console.log("🔍 [Auth Config] Environment variables check:", {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? `SET (${process.env.GOOGLE_CLIENT_ID.substring(0, 20)}...)` : "NOT SET",
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ? "SET" : "NOT SET",
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID ? "SET" : "NOT SET",
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET ? "SET" : "NOT SET",
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ? "SET" : "NOT SET",
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NODE_ENV: process.env.NODE_ENV,
+    APP_URL
+});
+
 // Promise-wrapping helper functions for bcrypt
 const hashAsync = (password: string, saltRounds: number): Promise<string> => {
     return new Promise((resolve, reject) => {

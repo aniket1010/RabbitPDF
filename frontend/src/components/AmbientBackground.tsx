@@ -1,21 +1,11 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { type ReactNode } from "react";
 
 type Props = { children: ReactNode };
 
 export function AmbientBackground({ children }: Props) {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const VISUAL_TEST = true;
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePosition({ x: e.clientX, y: e.clientY });
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
 
   return (
     <div className="min-h-screen bg-[#F6F5F2] font-mono overflow-y-auto overflow-x-hidden relative">
@@ -87,12 +77,6 @@ export function AmbientBackground({ children }: Props) {
           }}
         />
       )}
-
-      <motion.div
-        className="fixed w-3 h-3 bg-black/20 rounded-full pointer-events-none z-50 mix-blend-multiply"
-        animate={{ x: mousePosition.x - 6, y: mousePosition.y - 6 }}
-        transition={{ type: "spring", stiffness: 100, damping: 20 }}
-      />
 
       <div className="relative z-10">{children}</div>
     </div>

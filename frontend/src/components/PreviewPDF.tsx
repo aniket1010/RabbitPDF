@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { FiLoader, FiRefreshCw } from 'react-icons/fi';
+import { FiRefreshCw } from 'react-icons/fi';
 import dynamic from 'next/dynamic';
+import Spinner from './Spinner';
 
 // Import required styles
 import '@react-pdf-viewer/core/lib/styles/index.css';
@@ -35,7 +36,7 @@ const TransitionOverlay = ({ state, visible }: { state: ViewState; visible: bool
       }}
     >
       <div className="flex flex-col items-center gap-2 text-black/60">
-        {state !== 'error' ? <div className="animate-spin"><FiLoader size={24} /></div> : <FiRefreshCw size={24} />}
+        {state !== 'error' ? <Spinner size={24} /> : <FiRefreshCw size={24} />}
         <span className="text-sm">{message}</span>
       </div>
     </div>
@@ -50,6 +51,9 @@ interface PreviewPDFProps {
   isNavigationAction?: boolean;
   onError?: () => void;
   onSearchReady?: (searchFunctions: { searchFn: (text: string) => void; clearFn: () => void }) => void;
+  deferredJumpPage?: number | null;
+  initialPageIndex?: number | null;
+  onJumpComplete?: () => void;
 }
 
 export default function PreviewPDF({
@@ -59,7 +63,10 @@ export default function PreviewPDF({
   onPageChange,
   isNavigationAction = false,
   onError,
-  onSearchReady
+  onSearchReady,
+  deferredJumpPage = null,
+  initialPageIndex = null,
+  onJumpComplete,
 }: PreviewPDFProps) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('idle');
@@ -181,6 +188,9 @@ export default function PreviewPDF({
               onDocumentLoadSuccess={handleDocumentLoadSuccess}
               isNavigationAction={isNavigationAction}
               onSearchReady={onSearchReady}
+              deferredJumpPage={deferredJumpPage}
+              initialPageIndex={initialPageIndex}
+              onJumpComplete={onJumpComplete}
             />
           </div>
         )}

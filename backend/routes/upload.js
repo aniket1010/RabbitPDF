@@ -9,6 +9,7 @@ const { verifyAuth } = require('../utils/auth');
 // Note: Removed heavy text splitter dependency; using lightweight chunking
 const path = require('path');
 const fs = require('fs');
+const { getRandomAvatar } = require('../utils/avatars');
 
 // Set up Multer disk storage
 const storage = multer.diskStorage({
@@ -125,13 +126,15 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     
     if (!user) {
       try {
-        // Create user if they don't exist
+        // Create user if they don't exist with random avatar
+        const randomAvatar = getRandomAvatar();
         user = await prisma.user.create({
           data: {
             id: req.userId,
             email: req.userEmail,
             name: req.userName || 'User',
             emailVerified: new Date(), // Mark as verified since they signed in via OAuth
+            image: randomAvatar, // Assign random avatar instead of OAuth profile picture
           }
         });
       } catch (userCreateError) {
@@ -228,9 +231,10 @@ async function processPdfInBackground(filePath, conversationId, originalName) {
 
         // Read and parse PDF (async, non-blocking)
         const dataBuffer = await fs.promises.readFile(filePath);
+        const localPageTexts = [];
         const data = await pdfParse(dataBuffer, {
             max: 0,
-            pagerender: renderPage
+            pagerender: createRenderPage(localPageTexts)
         });
 
         const docText = (data.text || '').trim();
@@ -244,8 +248,7 @@ async function processPdfInBackground(filePath, conversationId, originalName) {
         }
 
         // Build page texts and chunk per page (no coordinates)
-        const pageTexts = Array.isArray(global.pageTexts) ? global.pageTexts : [];
-        const pageChunks = chunkPdfByPage(pageTexts, conversationId);
+        const pageChunks = chunkPdfByPage(localPageTexts, conversationId);
         const chunks = pageChunks.map(c => c.text);
 
         // Generate embeddings
@@ -325,27 +328,28 @@ async function processPdfInBackground(filePath, conversationId, originalName) {
 
 
 // Enhanced PDF page renderer function with position tracking
-function renderPage(pageData) {
-    return pageData.getTextContent()
-        .then(function(textContent) {
-            let lastY, text = '';
-            for (let item of textContent.items) {
-                if (lastY != item.transform[5] && text) {
-                    text += '\n';
+function createRenderPage(pageTexts) {
+    return function renderPage(pageData) {
+        return pageData.getTextContent()
+            .then(function(textContent) {
+                let lastY, text = '';
+                for (let item of textContent.items) {
+                    if (lastY != item.transform[5] && text) {
+                        text += '\n';
+                    }
+                    // Normalize hyphenated line breaks: "word-\nnext" -> "wordnext"
+                    const normalized = String(item.str)
+                        .replace(/\s+/g, ' ');
+                    text += normalized;
+                    lastY = item.transform[5];
                 }
-                // Normalize hyphenated line breaks: "word-\nnext" -> "wordnext"
-                const normalized = String(item.str)
-                    .replace(/\s+/g, ' ');
-                text += normalized;
-                lastY = item.transform[5];
-            }
-            if (!global.pageTexts) global.pageTexts = [];
-            global.pageTexts[pageData.pageIndex] = {
-                pageNumber: pageData.pageIndex + 1,
-                text
-            };
-            return text;
-        });
+                pageTexts[pageData.pageIndex] = {
+                    pageNumber: pageData.pageIndex + 1,
+                    text
+                };
+                return text;
+            });
+    }
 }
 
 module.exports = router;

@@ -5,24 +5,26 @@ const { getBatchEmbeddings } = require('../services/embedding');
 const { batchUpsertEmbeddings } = require('../services/pinecone');
 
 // Lightweight PDF page renderer (no coordinates), stores per-page text for chunking
-function renderPage(pageData) {
-  return pageData.getTextContent().then(function (textContent) {
-    let lastY, text = '';
-    for (let item of textContent.items) {
-      if (lastY != item.transform[5] && text) {
-        text += '\n';
+// Create a PDF page renderer bound to a local pageTexts array to avoid global contamination
+function createRenderPage(pageTexts) {
+  return function renderPage(pageData) {
+    return pageData.getTextContent().then(function (textContent) {
+      let lastY, text = '';
+      for (let item of textContent.items) {
+        if (lastY != item.transform[5] && text) {
+          text += '\n';
+        }
+        const normalized = String(item.str).replace(/\s+/g, ' ');
+        text += normalized;
+        lastY = item.transform[5];
       }
-      const normalized = String(item.str).replace(/\s+/g, ' ');
-      text += normalized;
-      lastY = item.transform[5];
-    }
-    if (!global.pageTexts) global.pageTexts = [];
-    global.pageTexts[pageData.pageIndex] = {
-      pageNumber: pageData.pageIndex + 1,
-      text,
-    };
-    return text;
-  });
+      pageTexts[pageData.pageIndex] = {
+        pageNumber: pageData.pageIndex + 1,
+        text,
+      };
+      return text;
+    });
+  };
 }
 
 // Simple heuristic: first line if it looks like a heading (short, Title Case)
@@ -106,9 +108,10 @@ async function processPdf({ filePath, conversationId, originalName }) {
     });
 
     const dataBuffer = await fs.promises.readFile(filePath);
+    const localPageTexts = [];
     const data = await pdfParse(dataBuffer, {
       max: 0,
-      pagerender: renderPage,
+      pagerender: createRenderPage(localPageTexts),
     });
 
     const docText = (data.text || '').trim();
@@ -121,8 +124,7 @@ async function processPdf({ filePath, conversationId, originalName }) {
       return;
     }
 
-    const pageTexts = Array.isArray(global.pageTexts) ? global.pageTexts : [];
-    const pageChunks = chunkPdfByPage(pageTexts, conversationId);
+    const pageChunks = chunkPdfByPage(localPageTexts, conversationId);
     const chunks = pageChunks.map((c) => c.text);
 
     const embeddings = await getBatchEmbeddings(chunks);

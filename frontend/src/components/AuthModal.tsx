@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { signIn, signUp } from '@/lib/auth-client'
 import { Github, Mail, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
+import Spinner from './Spinner'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -15,6 +17,7 @@ interface AuthModalProps {
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [authMethod, setAuthMethod] = useState<'social' | 'email'>('social')
+  const router = useRouter()
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -122,6 +125,7 @@ function EmailAuth({
   onSuccess: () => void
   onBackToSocial: () => void 
 }) {
+  const router = useRouter()
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -184,7 +188,7 @@ function EmailAuth({
         }
   toast.success('Signed in successfully!')
   // Redirect to homepage after successful sign-in
-  window.location.href = '/'
+  router.replace('/')
       }
       
       onSuccess()
@@ -300,7 +304,7 @@ function EmailAuth({
         <Button type="submit" className="w-full h-11" disabled={loading}>
           {loading ? (
             <div className="flex items-center gap-2">
-              <div className="animate-spin h-4 w-4 border-2 border-background border-t-transparent rounded-full" />
+              <Spinner size={16} color="#ffffff" />
               {isSignUp ? 'Creating Account...' : 'Signing In...'}
             </div>
           ) : (

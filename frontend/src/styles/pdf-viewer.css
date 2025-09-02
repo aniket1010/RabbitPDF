@@ -1,3 +1,54 @@
+/* Mobile citations - make them look like plain text */
+.mobile-citations .citation-button {
+  all: unset !important;
+  display: inline !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  line-height: inherit !important;
+  color: inherit !important;
+  text-decoration: none !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: text !important;
+  pointer-events: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  letter-spacing: inherit !important;
+  word-spacing: inherit !important;
+}
+
+/* Remove the ::before pseudo-element that creates the styled button appearance */
+.mobile-citations .citation-button::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* Override all interactive states */
+.mobile-citations .citation-button:hover,
+.mobile-citations .citation-button:focus,
+.mobile-citations .citation-button:active,
+.mobile-citations .citation-button:visited {
+  all: unset !important;
+  display: inline !important;
+  color: inherit !important;
+  text-decoration: none !important;
+  background: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.mobile-citations .citation-button:hover::before,
+.mobile-citations .citation-button:focus::before,
+.mobile-citations .citation-button:active::before,
+.mobile-citations .citation-button:visited::before {
+  display: none !important;
+  content: none !important;
+}
+
 /* PDF Viewer specific styles */
 .rpv-core__viewer {
   background-color: #f5f5f5;

@@ -460,6 +460,88 @@ export default function ChatPanel({
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px"
   }
 
+  // Subtle accent shimmer bar (used in processing notice)
+  const ShimmerBar = () => {
+    return (
+      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+        <div
+          className="absolute inset-y-0 left-0 w-1/2"
+          style={{
+            backgroundImage:
+              "linear-gradient(90deg, rgba(192,201,238,0.15), rgba(192,201,238,0.7), rgba(192,201,238,0.15))",
+            animation: "shimmer 1.4s ease-in-out infinite",
+          }}
+        />
+        <style jsx>{`
+          @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(200%); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            div[style] { animation: none !important; }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  // Refined three-dot typing loader for analyzing state
+  const TypingDotsLoader = ({ size = 'md', color = '#000000' }: { size?: 'sm' | 'md' | 'lg'; color?: string }) => {
+    const dot = size === 'sm' ? 6 : size === 'lg' ? 10 : 8
+    const gap = size === 'sm' ? 4 : size === 'lg' ? 6 : 5
+    return (
+      <div className="flex items-center" style={{ gap }} aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            style={{
+              width: dot,
+              height: dot,
+              backgroundColor: color,
+              borderRadius: '50%',
+              display: 'inline-block',
+              animation: 'td-bounce 1.3s ease-in-out infinite',
+              animationDelay: `${i * 120}ms`,
+              opacity: 0.9,
+            }}
+          />
+        ))}
+        <style jsx>{`
+          @keyframes td-bounce {
+            0%, 80%, 100% { transform: translateY(0); opacity: .55; }
+            40% { transform: translateY(-3px); opacity: 1; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            span[style] { animation: none !important; opacity: .7; }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  // Inline processing notice (non-overlay), professional styling
+  const ProcessingNotice = () => {
+    return (
+      <div className="flex items-start gap-3 bg-white px-3 py-2 rounded-2xl rounded-tl-md shadow-sm border border-black/5">
+        <div
+          className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-md"
+          style={{ backgroundColor: "#C0C9EE" }}
+        >
+          <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-black/80">Preparing your document</div>
+          <div className="mt-0.5 text-xs text-black/60">
+            We’re extracting and indexing it. You can ask now — we’ll reply as soon as it’s ready.
+          </div>
+          <div className="mt-2">
+            <ShimmerBar />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="w-full h-screen flex flex-col bg-white"
@@ -473,7 +555,12 @@ export default function ChatPanel({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
             {showMobileControls && onToggleSidebar && (
-              <button onClick={onToggleSidebar} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button 
+                onClick={onToggleSidebar} 
+                className="p-3 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label="Open sidebar"
+                title="Open sidebar"
+              >
                 <Menu className="w-5 h-5 text-gray-600" />
               </button>
             )}
@@ -487,15 +574,9 @@ export default function ChatPanel({
               <div className="absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-green-400 rounded-full border-2 border-white"></div>
             </div>
             <div>
-                          <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold text-black/60 uppercase tracking-wider">AI Assistant</h3>
-              {/* Show pending message indicator */}
-              {messages.filter(m => m.status === 'pending').length > 0 && (
-                <div className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">
-                  {messages.filter(m => m.status === 'pending').length} pending
-                </div>
-              )}
-            </div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-black/60 uppercase tracking-wider">AI Assistant</h3>
+              </div>
               <h2 className="text-lg sm:text-xl font-bold text-black truncate">
                 {currentTitle ? stripPdfExtension(currentTitle) : "Document Analysis"}
               </h2>
@@ -504,10 +585,13 @@ export default function ChatPanel({
           {showMobileControls && onViewPDF && (
             <button
               onClick={onViewPDF}
-              className="flex items-center gap-2 px-4 py-2 btn-secondary rounded-xl hover:shadow-md transition-all duration-200 group"
+              className="flex items-center gap-2 px-4 py-3 btn-secondary rounded-xl hover:shadow-md transition-all duration-200 group touch-manipulation min-h-[44px]"
+              aria-label="View PDF document"
+              title="View PDF document"
             >
               <File className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
-              <span className="text-sm font-medium">View PDF</span>
+              <span className="text-sm font-medium hidden xs:inline">View PDF</span>
+              <span className="text-sm font-medium xs:hidden">PDF</span>
             </button>
           )}
         </div>
@@ -515,6 +599,11 @@ export default function ChatPanel({
 
       {/* Messages Area */}
       <div className="relative flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        {isPdfProcessing && (
+          <div className="animate-fade-in">
+            <ProcessingNotice />
+          </div>
+        )}
         {isLoading && messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center animate-fade-in">
@@ -587,12 +676,14 @@ export default function ChatPanel({
                           content={message.text}
                           contentType={message.contentType || "text"}
                           isUserMessage={message.isUser}
+                          isMobileView={showMobileControls}
                         />
                       ) : (
                         <HtmlRenderer
                           content={message.formattedText || message.text}
                           contentType={message.contentType === "markdown" ? "html" : (message.contentType || "html")}
                           onReferenceClick={onReferenceClick}
+                          isMobileView={showMobileControls}
                         />
                       )}
                     </div>
@@ -620,9 +711,9 @@ export default function ChatPanel({
                     <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
                   </div>
                   <div className="bg-white px-3 py-2 rounded-2xl rounded-tl-md shadow-lg border border-black/5">
-                    <div className="flex items-center space-x-3">
-                      <Spinner size="sm" />
-                      <span className="text-sm text-black/70 font-medium">Analyzing...</span>
+                    <div className="flex items-center gap-3" role="status" aria-live="polite" aria-label="Analyzing">
+                      <TypingDotsLoader size="md" />
+                      <span className="text-sm text-black/70 font-medium">Analyzing…</span>
                     </div>
                   </div>
                 </div>
@@ -631,25 +722,7 @@ export default function ChatPanel({
             <div ref={messagesEndRef} />
           </>
         )}
-        {isPdfProcessing && !hasUserSentDuringProcessing && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full px-4 py-2 border border-gray-200 shadow-sm">
-              <span
-                className="animate-spin"
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: '50%',
-                  display: 'inline-block',
-                  borderTop: '3px solid #FFF',
-                  borderRight: '3px solid transparent',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <p className="text-sm text-black/70 font-medium">Processing your document… Feel free to ask now, we’ll reply once it’s finished.</p>
-            </div>
-          </div>
-        )}
+        {/* Removed overlay; inline notice above replaces it */}
       </div>
 
       {/* Enhanced Input Area */}

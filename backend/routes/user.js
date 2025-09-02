@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../prismaClient');
 const { verifyAuth } = require('../utils/auth');
+const { getRandomAvatar } = require('../utils/avatars');
 
 const router = express.Router();
 
@@ -38,11 +39,13 @@ router.patch('/profile', verifyAuth, async (req, res) => {
       // In development, create the user if it doesn't exist
       if (process.env.NODE_ENV !== 'production' && userId === 'dev-user') {
         console.log('🔧 [User] Creating development user...');
+        const randomAvatar = getRandomAvatar();
         const newUser = await prisma.user.create({
           data: {
             id: 'dev-user',
             email: 'dev@example.com',
-            name: name.trim()
+            name: name.trim(),
+            image: randomAvatar
           },
           select: {
             id: true,
@@ -265,17 +268,18 @@ router.post('/create', async (req, res) => {
     console.log('🔍 [User] Creating new user:', { id, email, name });
 
     // Use upsert to avoid conflicts if user somehow already exists
+    const randomAvatar = getRandomAvatar();
     const user = await prisma.user.upsert({
       where: { email },
       update: {
         name,
-        image: image || null
+        image: randomAvatar // Always use random avatar instead of OAuth image
       },
       create: {
         id: id || undefined, // Let Prisma generate ID if not provided
         email,
         name,
-        image: image || null
+        image: randomAvatar // Assign random avatar instead of OAuth profile picture
       },
       select: {
         id: true,

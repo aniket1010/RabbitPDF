@@ -8,6 +8,7 @@ import ChatPanel from './ChatPanel';
 import { getConversationDetails } from '@/services/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { stripPdfExtension } from '@/lib/utils';
+import Spinner from './Spinner';
 
 interface ResponsiveLayoutProps {
   conversationId: string;
@@ -54,17 +55,25 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
     setIsClient(true);
     
     const checkMobile = () => {
-      // Check both screen width and touch capability
-      const isMobileScreen = window.innerWidth < 768; // md breakpoint
+      // Enhanced mobile detection with better breakpoint logic
+      const isMobileScreen = window.innerWidth <= 768; // md breakpoint
+      const isTabletPortrait = window.innerWidth <= 1024 && window.innerHeight > window.innerWidth;
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      setIsMobile(isMobileScreen || (isTouchDevice && window.innerWidth < 1024));
+      
+      // Use mobile layout for:
+      // 1. Small screens (phones)
+      // 2. Tablets in portrait mode with touch
+      // 3. Any touch device under 1024px width
+      setIsMobile(isMobileScreen || (isTabletPortrait && isTouchDevice) || (isTouchDevice && window.innerWidth <= 1024));
     };
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
 
     return () => {
       window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
     };
   }, []);
 
@@ -156,7 +165,10 @@ export default function ResponsiveLayout({ conversationId }: ResponsiveLayoutPro
   if (!isClient) {
     return (
       <div className="flex-1 h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-center">
+          <Spinner size={40} className="mx-auto mb-3" />
+          <div className="text-gray-500">Loading...</div>
+        </div>
       </div>
     );
   }

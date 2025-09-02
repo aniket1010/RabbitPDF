@@ -23,22 +23,10 @@ export default function VerifyEmailPage() {
     setStatus("verifying");
     setMessage("Verifying your email...");
     try {
-      const res = await fetch("/api/auth/email/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: currentToken, email: currentEmail }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Verification failed");
-      }
-      setStatus("success");
-      setMessage("Email verified! You can now sign in.");
-
-      // Remove token from URL after successful verification
-      const newSearchParams = new URLSearchParams(searchParams);
-      newSearchParams.delete("token");
-      router.replace(`/verify-email?${newSearchParams.toString()}`);
+      // Hit the new endpoint that verifies AND creates a session, then redirects
+      const next = `/api/auth/email/verify-and-login?token=${encodeURIComponent(currentToken)}&email=${encodeURIComponent(currentEmail)}`;
+      router.replace(next);
+      return;
     } catch (e: unknown) {
       const message = typeof e === "object" && e && "message" in e ? String((e as { message?: unknown }).message) : undefined;
       setStatus("error");

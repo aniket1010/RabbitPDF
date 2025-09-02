@@ -39,22 +39,54 @@ async function processMessageContent(content, role = 'assistant') {
         // Convert citations to clickable buttons BEFORE markdown processing
         const createCitationButton = (pageNumber) =>
           `<button type="button" class="citation-button" data-page="${pageNumber}" style="background: none; border: none; color: inherit; text-decoration: none; cursor: pointer; padding: 0; font: inherit;">Page ${pageNumber}</button>`;
+        
+        // 0) Handle shorthand blocks: [Pages 136-138], [Page 82, 110, 165], [pp. 10–12, 15]
+        const parsePageExpressions = (expr) => {
+          if (!expr) return [];
+          const pages = [];
+          const seen = new Set();
+          const segments = String(expr).split(',');
+          for (let raw of segments) {
+            if (!raw) continue;
+            const seg = String(raw).trim();
+            if (!seg) continue;
+            const cleaned = seg.replace(/[^0-9\-–]+/gi, '');
+            if (!cleaned) continue;
+            const m = cleaned.match(/^(\d+)\s*[\-–]\s*(\d+)$/);
+            if (m) {
+              let start = parseInt(m[1], 10);
+              let end = parseInt(m[2], 10);
+              if (isNaN(start) || isNaN(end)) continue;
+              if (start > end) { const t = start; start = end; end = t; }
+              const maxSpan = Math.min(500, end - start + 1);
+              for (let p = 0; p < maxSpan; p++) {
+                const num = start + p;
+                if (!seen.has(num)) { seen.add(num); pages.push(num); }
+              }
+            } else {
+              const num = parseInt(cleaned, 10);
+              if (!isNaN(num) && num > 0 && !seen.has(num)) { seen.add(num); pages.push(num); }
+            }
+          }
+          return pages;
+        };
+        const pageBlockRegex = /\[(?:p(?:age|ages)|pgs?|pp?\.?)[\s:]+([^\]]+?)\]/gi;
+        let contentWithButtons = content.replace(pageBlockRegex, (match, inner) => {
+          const pages = parsePageExpressions(inner);
+          if (!pages || pages.length === 0) return match;
+          return pages.map((p) => createCitationButton(p)).join(' ');
+        });
+
         // 1) Handle groups like: [Page 40, Page 6] or [Page 13 and Page 65]
-        let contentWithButtons = content.replace(/\[((?:[^\]]*Page\s+\d+[^\]]*){2,})\]/g, (match, inner) => {
+        contentWithButtons = contentWithButtons.replace(/\[((?:[^\]]*Page\s+\d+[^\]]*){2,})\]/g, (match, inner) => {
           const pages = Array.from(inner.matchAll(/Page\s+(\d+)/g)).map(m => m[1]);
           if (!pages || pages.length === 0) return match;
-          const buttons = pages
-            .map(pageNumber => {
-              return createCitationButton(pageNumber);
-            })
-            .join(' ');
+          const buttons = pages.map(pageNumber => createCitationButton(pageNumber)).join(' ');
           return buttons;
         });
 
         // 2) Handle single citations like: [Page 40]
-        contentWithButtons = contentWithButtons.replace(/\[Page (\d+)\]/g, (match, pageNumber) => {
-          return createCitationButton(pageNumber);
-        });
+        contentWithButtons = contentWithButtons.replace(/\[Page (\d+)\]/g, (match, pageNumber) => createCitationButton(pageNumber));
 
         // 3) Deduplicate consecutive identical citation buttons (e.g., when the same page is cited twice back-to-back)
         const duplicateButtonsRegex = /(<button[^>]*class=\"citation-button\"[^>]*data-page=\"(\d+)\"[^>]*>[^<]*<\/button>)(?:\s*,?\s*\1)+/g;

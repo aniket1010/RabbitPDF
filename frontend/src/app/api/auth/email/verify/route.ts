@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRandomAvatar } from "@/lib/avatars";
 
 export async function POST(req: Request) {
   try {
@@ -29,11 +30,12 @@ export async function POST(req: Request) {
       }
 
       // Create the actual user from pending data
+      const randomAvatar = getRandomAvatar();
       const newUser = await prisma.user.create({
         data: {
           email: pendingUser.email,
           name: pendingUser.name,
-          image: pendingUser.image,
+          image: randomAvatar, // Use random avatar instead of pendingUser.image
           emailVerified: true,
         },
       });

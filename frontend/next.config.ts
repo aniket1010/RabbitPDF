@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: {
+    // Add your environment variables here as backup
+    // GOOGLE_CLIENT_ID: 'your_google_client_id_here',
+    // GOOGLE_CLIENT_SECRET: 'your_google_client_secret_here',
+    // GITHUB_CLIENT_ID: 'your_github_client_id_here', 
+    // GITHUB_CLIENT_SECRET: 'your_github_client_secret_here',
+    // BETTER_AUTH_SECRET: 'your_secret_here',
+  },
   // Image configuration for external sources
   images: {
     remotePatterns: [
@@ -27,10 +35,13 @@ const nextConfig: NextConfig = {
         as: '*.js',
       },
     },
+    resolveAlias: {
+      canvas: './src/lib/canvas-stub.js',
+    },
   },
   // Webpack fallback for when Turbopack is not used
   webpack: (config) => {
-    // Handle PDF.js binary files
+    // Handle PDF.js binary files and canvas dependency
     config.resolve.alias = {
       ...config.resolve.alias,
       canvas: false,
@@ -40,6 +51,12 @@ const nextConfig: NextConfig = {
     config.module.rules.push({
       test: /\.node$/,
       use: 'ignore-loader',
+    });
+    
+    // Exclude canvas from bundling entirely
+    config.externals = config.externals || [];
+    config.externals.push({
+      canvas: 'canvas',
     });
     
     return config;

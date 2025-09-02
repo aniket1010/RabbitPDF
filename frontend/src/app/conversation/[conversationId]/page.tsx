@@ -3,6 +3,7 @@
 import { useState, useEffect, use as useUnwrap } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainLayout } from '@/components';
+import Spinner from '@/components/Spinner';
 import { getConversationDetails } from '@/services/api';
 // Note: Removed strict AuthGuard to avoid blank screen when unauthenticated
 
@@ -61,7 +62,7 @@ export default function ConversationPage({ params }: PageProps) {
     return (
       <div className="flex items-center justify-center h-full bg-white">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <Spinner size={40} className="mx-auto mb-4" />
           <p className="text-gray-600">Loading conversation...</p>
         </div>
       </div>

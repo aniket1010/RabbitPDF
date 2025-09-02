@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import Spinner from './Spinner';
 import { 
   User, 
   Briefcase, 
@@ -268,7 +269,7 @@ export function OnboardingModal({ isOpen, onComplete }: OnboardingModalProps) {
                 <Button onClick={handleComplete} disabled={loading}>
                   {loading ? (
                     <div className="flex items-center gap-2">
-                      <div className="animate-spin h-4 w-4 border-2 border-background border-t-transparent rounded-full" />
+                      <Spinner size={16} color="#ffffff" />
                       Completing...
                     </div>
                   ) : (

@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { LogIn, LogOut, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ClientOnly from './ClientOnly';
+import Spinner from './Spinner';
 
 function AuthButtonContent() {
   const { data: session, isPending } = useSession();
@@ -13,7 +14,7 @@ function AuthButtonContent() {
   if (isPending) {
     return (
       <Button variant="ghost" disabled>
-        <div className="animate-spin h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full"></div>
+        <Spinner size={16} />
         Loading...
       </Button>
     );
@@ -55,7 +56,7 @@ export default function AuthButton() {
     <ClientOnly
       fallback={
         <Button variant="ghost" disabled>
-          <div className="animate-spin h-4 w-4 border-2 border-gray-300 border-t-gray-600 rounded-full"></div>
+          <Spinner size={16} />
           Loading...
         </Button>
       }

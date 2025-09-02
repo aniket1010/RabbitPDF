@@ -15,6 +15,9 @@ interface PdfViewerCoreProps {
   onDocumentLoadSuccess?: (e: any) => void;
   isNavigationAction?: boolean;
   onSearchReady?: (searchFunctions: { searchFn: (text: string, targetPage?: number) => void; clearFn: () => void }) => void;
+  deferredJumpPage?: number | null;
+  initialPageIndex?: number | null;
+  onJumpComplete?: () => void;
 }
 
 // Helper function to escape special characters for use in a regular expression
@@ -30,10 +33,24 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
   onDocumentLoadSuccess,
   isNavigationAction = false,
   onSearchReady,
+  deferredJumpPage = null,
+  initialPageIndex = null,
+  onJumpComplete,
 }) => {
+  const viewerRootRef = React.useRef<HTMLDivElement | null>(null);
   // Create page navigation plugin
   const pageNavigationPluginInstance = pageNavigationPlugin();
   const { jumpToPage } = pageNavigationPluginInstance;
+
+  // Suppress viewer-driven onPageChange callbacks for a short window
+  // after a programmatic navigation (prevents bounce back to page 1).
+  const navigationSuppressUntilRef = React.useRef<number>(0);
+  const [isDocumentLoaded, setIsDocumentLoaded] = React.useState(false);
+
+  // Reset document loaded state when the PDF file changes
+  React.useEffect(() => {
+    setIsDocumentLoaded(false);
+  }, [pdfUrl]);
 
   // Create search plugin with configuration to disable auto-jumping
   const searchPluginInstance = searchPlugin({
@@ -47,6 +64,7 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
   // Handle document load
   const handleDocumentLoad = React.useCallback((e: any) => {
     console.log('📄 PDF loaded with', e.doc.numPages, 'pages');
+    setIsDocumentLoaded(true);
     if (onDocumentLoadSuccess) {
       onDocumentLoadSuccess(e);
     }
@@ -139,12 +157,33 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
     }
   }, [onDocumentLoadSuccess, onSearchReady, highlight, clearHighlights]);
 
+  // Handle deferred jumps from parent after document is loaded
+  React.useEffect(() => {
+    if (isDocumentLoaded && deferredJumpPage && deferredJumpPage > 0 && jumpToPage) {
+      console.log('🚀 [PdfViewerCore] Deferred jump requested to page:', deferredJumpPage);
+      // small delay to ensure layout is ready on mobile
+      setTimeout(() => {
+        console.log('🚀 [PdfViewerCore] Executing deferred jump to page:', deferredJumpPage);
+        navigationSuppressUntilRef.current = Date.now() + 2000;
+        jumpToPage(deferredJumpPage - 1);
+        if (onJumpComplete) {
+          onJumpComplete();
+        }
+      }, 250);
+    }
+  }, [isDocumentLoaded, deferredJumpPage, jumpToPage, onJumpComplete]);
+
   // Handle page changes from scrolling
   const handlePageChange = React.useCallback((e: { currentPage: number }) => {
+    const now = Date.now();
+    if (now < navigationSuppressUntilRef.current) {
+      console.log('⏸️ Ignoring page change during suppression window:', e.currentPage + 1);
+      return;
+    }
     // Prevent feedback loop if navigation was triggered by a button click
     if (!isNavigationAction) {
-        console.log('📄 Page changed by scrolling to:', e.currentPage + 1); // Convert from 0-based to 1-based
-        onPageChange({ currentPage: e.currentPage + 1 });
+      console.log('📄 Page changed by scrolling to:', e.currentPage + 1); // Convert from 0-based to 1-based
+      onPageChange({ currentPage: e.currentPage + 1 });
     }
   }, [onPageChange, isNavigationAction]);
 
@@ -152,19 +191,21 @@ const PdfViewerCore: React.FC<PdfViewerCoreProps> = ({
   React.useEffect(() => {
     if (isNavigationAction && jumpToPage) {
       console.log('🎯 Jumping to page:', currentPage);
+      // Open a suppression window to ignore viewer-emitted page changes
+      navigationSuppressUntilRef.current = Date.now() + 2000;
       jumpToPage(currentPage - 1); // Convert from 1-based to 0-based
     }
   }, [currentPage, isNavigationAction, jumpToPage]);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full" ref={viewerRootRef}>
       <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
         <Viewer
           fileUrl={pdfUrl}
           onDocumentLoad={handleDocumentLoad}
           onPageChange={handlePageChange}
           defaultScale={SpecialZoomLevel.PageFit}
-          initialPage={currentPage - 1}
+          initialPage={typeof initialPageIndex === 'number' ? initialPageIndex : undefined}
           plugins={[pageNavigationPluginInstance, searchPluginInstance]}
         />
       </Worker>

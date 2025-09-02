@@ -11,6 +11,7 @@ import Image from "next/image"
 import { useSession } from '@/lib/auth-client'
 import { updateUsername, updateUserAvatar } from "@/services/api"
 import { useWebSocket } from "@/hooks/useWebSocket"
+import Spinner from "./Spinner"
 
 interface SettingsDialogProps {
   open: boolean
@@ -229,7 +230,7 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
                       disabled={!tempUsername.trim() || tempUsername === currentUsername || loading}
                     >
                       {loading ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                        <Spinner size={16} color="#ffffff" className="mr-2" />
                       ) : (
                         <Check className="h-4 w-4 mr-2" />
                       )}
@@ -324,7 +325,7 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
                       disabled={!tempAvatar || tempAvatar === currentAvatar || loading}
                     >
                       {loading ? (
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                        <Spinner size={16} color="#ffffff" className="mr-2" />
                       ) : (
                         <Check className="h-4 w-4 mr-2" />
                       )}

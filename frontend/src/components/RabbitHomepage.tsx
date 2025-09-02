@@ -2,18 +2,120 @@
 
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowRight, MessageSquare, Zap, Shield, Brain, FileText, Upload } from "lucide-react"
+import Link from "next/link"
+import { Button } from "./ui/button"
+import { useSession } from "@/lib/auth-client"
+import { ArrowRight, MessageSquare, Zap, Shield, Brain, FileText, Upload, Menu, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { RabbitVideoLoader } from "./rabbit-video-loader"
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
+import { toast } from "sonner"
+import { countPdfPages, MAX_PDF_PAGES } from "@/lib/pdf"
+import Sidebar from "./Sidebar"
 
 export function RabbitHomepage() {
   const router = useRouter()
-  // Removed custom cursor and loader logic
+  const { data: session, isPending } = useSession()
+  
+  // Hydration-safe mobile detection
+  const [isMobile, setIsMobile] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(false)
+  const [isClosingSidebar, setIsClosingSidebar] = useState(false)
+  
   // VISUAL TEST CHECKPOINT: set to false to revert the stronger orbs + glass effect
   const VISUAL_TEST = true
 
-  // Removed mouse tracking and loader timer
+  // Hydration-safe mobile detection
+  useEffect(() => {
+    setIsMounted(true)
+    
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Sidebar handlers
+  const handleToggleSidebar = () => {
+    if (showSidebar) {
+      setIsClosingSidebar(true)
+      setTimeout(() => {
+        setShowSidebar(false)
+        setIsClosingSidebar(false)
+      }, 300)
+    } else {
+      setShowSidebar(true)
+    }
+  }
+
+  // Handle "Experience the Magic" button click (exact same as Sidebar's handleNewChat)
+  const handleExperienceTheMagic = () => {
+    console.log("🎯 [Homepage] Experience the Magic button clicked")
+    console.log("👤 [Homepage] Session user:", session?.user)
+    
+    // If user is not signed in, redirect to sign in
+    if (!session?.user) {
+      console.log("🔄 [Homepage] User not signed in, redirecting to sign-in")
+      window.location.href = "/sign-in"
+      return
+    }
+
+    console.log("📁 [Homepage] User is signed in, triggering file upload")
+
+    // Create a hidden file input element
+    console.log("🔧 [Homepage] Creating file input element")
+    const fileInput = document.createElement("input")
+    fileInput.type = "file"
+    fileInput.accept = ".pdf"
+    fileInput.style.display = "none"
+
+    // Add event listener for file selection
+    fileInput.addEventListener("change", async (event) => {
+      console.log("📄 [Homepage] File input change event triggered")
+      const target = event.target as HTMLInputElement
+      const file = target.files?.[0]
+      console.log("📁 [Homepage] Selected file:", file)
+
+      if (file) {
+        try {
+          // Client-side page limit guard
+          const pages = await countPdfPages(file)
+          if (pages > MAX_PDF_PAGES) {
+            toast.error(`Maximum ${MAX_PDF_PAGES} pages allowed. Your file has ${pages} pages.`)
+            return
+          }
+          console.log("🔄 [Homepage] Starting PDF upload for file:", file.name)
+          // Import the upload function dynamically to avoid SSR issues
+          const { uploadPDF } = await import("@/services/api")
+
+          // Upload the file - this now returns immediately with conversationId
+          const response = await uploadPDF(file)
+          console.log("✅ [Homepage] Upload successful, response:", response)
+
+          // Navigate to the new conversation immediately
+          // The conversation page will handle showing the processing status
+          console.log("🔄 [Homepage] Navigating to conversation:", `/conversation/${response.conversationId}`)
+          router.push(`/conversation/${response.conversationId}`)
+        } catch (error) {
+          console.error("❌ [Homepage] Failed to upload PDF:", error)
+          toast.error("Failed to upload PDF. Please try again.")
+        }
+      }
+
+      // Clean up the file input (regardless of success or failure)
+      document.body.removeChild(fileInput)
+    })
+
+    // Add to DOM and trigger click
+    console.log("🔧 [Homepage] Adding file input to DOM and triggering click")
+    document.body.appendChild(fileInput)
+    fileInput.click()
+    console.log("👆 [Homepage] File input clicked")
+  }
 
   return (
     <>
@@ -93,12 +195,63 @@ export function RabbitHomepage() {
 
   {/* Removed custom cursor overlay */}
 
+        {/* Mobile menu button - sticky */}
+        {isMounted && isMobile && (
+          <div className="fixed top-6 left-6 z-20">
+            <Button
+              onClick={handleToggleSidebar}
+              className="bg-black/10 hover:bg-black/20 text-black border-0 backdrop-blur-sm p-2 h-10 w-10 shadow-lg"
+            >
+              <Menu size={20} />
+            </Button>
+          </div>
+        )}
+
+        {/* Desktop Sign In button or Mobile Sign In (when no menu) */}
+        {!isPending && !session?.user && isMounted && !isMobile && (
+          <div className="absolute top-6 right-6 z-20">
+            <Button asChild className="bg-black text-white hover:bg-black/90">
+              <Link href="/sign-in">Sign In</Link>
+            </Button>
+          </div>
+        )}
+        
+        {/* Mobile Sign In when signed out and no sidebar open */}
+        {!isPending && !session?.user && isMounted && isMobile && !showSidebar && (
+          <div className="absolute top-6 right-6 z-20">
+            <Button asChild className="bg-black text-white hover:bg-black/90 text-sm px-4 h-10">
+              <Link href="/sign-in">Sign In</Link>
+            </Button>
+          </div>
+        )}
+
         {/* Hero Section - Increased spacing */}
   <section className="min-h-screen flex items-center justify-center px-6 py-20 relative z-10">
           <div className="max-w-6xl mx-auto text-center">
-            <div className="inline-flex items-center px-4 py-2 bg-white/80 text-black/80 text-sm mb-12 tracking-wide backdrop-blur-sm border border-black/10">
-              <div className="w-2 h-2 bg-black rounded-full mr-3" />
-              The Future of Document Intelligence
+            {/* Futuristic subtle badge using secondary color */}
+            <div className="inline-flex items-center px-5 py-2 mb-12 tracking-wide bg-white/75 backdrop-blur-sm border border-[#c0c9ee]/30 rounded-full relative overflow-hidden shadow-[0_0_20px_rgba(192,201,238,0.25)]">
+              <motion.div
+                className="w-2.5 h-2.5 rounded-full mr-3"
+                style={{ backgroundColor: "#c0c9ee", boxShadow: "0 0 10px rgba(192,201,238,0.8)" }}
+                animate={{ scale: [1, 1.1, 1], opacity: [0.9, 1, 0.9] }}
+                transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+              />
+              <span className="text-black/80 text-sm">The Future of Document Intelligence</span>
+              {/* subtle animated shimmer */}
+              <motion.div
+                className="absolute top-0 -left-1/3 h-full w-1/3"
+                style={{ background: "linear-gradient(90deg, transparent, rgba(192,201,238,0.20), transparent)" }}
+                animate={{ x: ["-50%", "150%"] }}
+                transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+              />
+              {/* accent line */}
+              <motion.span
+                className="absolute bottom-0 left-3 right-3 h-px"
+                style={{ backgroundColor: "rgba(192,201,238,0.55)" }}
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 1.2, ease: "easeOut" }}
+              />
             </div>
 
             {/* Hero Title with Rabbit Lottie positioned exactly where the red dot is */}
@@ -133,19 +286,12 @@ export function RabbitHomepage() {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-24">
               <button
-                onClick={() => router.push("/dashboard")}
+                onClick={handleExperienceTheMagic}
                 className="bg-black text-white px-12 py-5 text-xl font-medium hover:bg-black/90 transition-all duration-300 group"
               >
                 <span className="flex items-center">
                   Experience the Magic
                   <ArrowRight className="w-6 h-6 ml-3 group-hover:translate-x-1 transition-transform" />
-                </span>
-              </button>
-
-              <button className="border border-black/30 text-black px-12 py-5 text-xl font-medium hover:border-black/50 hover:bg-white/80 transition-all duration-300 backdrop-blur-sm">
-                <span className="flex items-center">
-                  <Upload className="w-6 h-6 mr-3" />
-                  Try Demo
                 </span>
               </button>
             </div>
@@ -176,13 +322,13 @@ export function RabbitHomepage() {
                   icon: <Zap className="w-6 h-6" />,
                   title: "Lightning Analysis",
                   description:
-                    "Process documents in under 2 seconds with 99.9% accuracy using advanced neural networks.",
+                    "Process documents in seconds with 90%+ accuracy using modern RAG Architecture.",
                 },
                 {
                   icon: <Shield className="w-6 h-6" />,
-                  title: "Quantum Security",
+                  title: "Next Gen Security",
                   description:
-                    "Military-grade encryption with zero-knowledge architecture keeps your data absolutely private.",
+                    "Smart protection with advanced encryption that keeps your data safe at all times.",
                 },
               ].map((feature, index) => (
                 <div key={index} className="group cursor-pointer h-full">
@@ -227,9 +373,9 @@ export function RabbitHomepage() {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { title: "Neural Networks", value: "99.9%", subtitle: "Accuracy Rate" },
-                { title: "Processing Speed", value: "2.3s", subtitle: "Average Response" },
-                { title: "Languages", value: "50+", subtitle: "Supported" },
+                { title: "Neural Networks", value: "90%", subtitle: "Accuracy Rate" },
+                { title: "Processing Speed", value: "5s", subtitle: "Average Response" },
+                { title: "Uptime", value: "99.9%", subtitle: "Reliable Service" },
                 { title: "Security", value: "256-bit", subtitle: "Encryption" },
               ].map((stat, index) => (
                 <div key={index} className="group cursor-pointer">
@@ -254,7 +400,7 @@ export function RabbitHomepage() {
             </p>
 
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={handleExperienceTheMagic}
               className="bg-black text-white px-16 py-6 text-2xl font-medium hover:bg-black/90 transition-all duration-300 shadow-lg hover:shadow-xl"
             >
               <span className="flex items-center">
@@ -270,10 +416,37 @@ export function RabbitHomepage() {
         {/* Footer - Increased spacing */}
         <footer className="py-20 px-6 border-t border-black/10 relative z-10">
           <div className="max-w-7xl mx-auto text-center">
-            <div className="text-black/70 text-sm">© 2024 RabbitPDF. Redefining Document Intelligence.</div>
+            <div className="text-black/70 text-sm">© 2025 RabbitPDF. Redefining Document Intelligence.</div>
           </div>
         </footer>
       </div>
+
+      {/* Mobile Sidebar Full Screen */}
+      {isMounted && isMobile && showSidebar && (
+        <>
+          <div 
+            className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm touch-none transition-opacity duration-300 ease-out"
+            onClick={handleToggleSidebar}
+            style={{
+              opacity: isClosingSidebar ? 0 : 1,
+              willChange: 'opacity'
+            }}
+          />
+          <div 
+            className="fixed inset-0 z-[110] bg-white touch-auto transition-transform duration-300 ease-out"
+            style={{
+              transform: isClosingSidebar ? 'translateX(-100%)' : 'translateX(0)',
+              willChange: 'transform',
+              backfaceVisibility: 'hidden',
+            }}
+          >
+            <Sidebar 
+              onClose={handleToggleSidebar} 
+              isMobile={true} 
+            />
+          </div>
+        </>
+      )}
     </>
   )
 }
@@ -300,11 +473,11 @@ function AIProcessingDemo() {
               animate={{ scale: stage === 0 ? 1.02 : 1 }}
               transition={{ duration: 0.3 }}
             >
-              <FileText className="w-6 h-6 text-black" />
+              <FileText className="w-6 h-6" style={{ color: '#0f172a' }} />
               <span className="text-black">Research Paper.pdf</span>
               {stage === 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="ml-auto">
-                  <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(0,0,0,0.3)', borderTopColor: '#c0c9ee' }} />
                 </motion.div>
               )}
             </motion.div>
@@ -325,7 +498,8 @@ function AIProcessingDemo() {
                     {[0, 1, 2].map((i) => (
                       <motion.div
                         key={i}
-                        className="w-2 h-2 bg-black rounded-full"
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: '#c0c9ee' }}
                         animate={{ y: [0, -4, 0] }}
                         transition={{
                           duration: 0.6,
@@ -355,7 +529,7 @@ function AIProcessingDemo() {
                       animate={{ y: [-2, 2, -2] }}
                       transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
                     >
-                      <Brain className="w-5 h-5 text-black mt-1" />
+                      <Brain className="w-5 h-5 mt-1" style={{ color: '#0f172a' }} />
                     </motion.div>
                     <div className="text-sm text-black">
                       <motion.p
@@ -438,26 +612,28 @@ function AdvancedProcessingDemo() {
             >
               <div className="flex items-center space-x-3 mb-4">
                 <motion.div
-                  className="w-3 h-3 bg-white rounded-full"
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: '#c0c9ee', boxShadow: '0 0 8px rgba(192,201,238,0.6)' }}
                   animate={{
                     scale: processingStage === 0 ? [1, 1.2, 1] : 1,
-                    opacity: processingStage === 0 ? [1, 0.8, 1] : 0.8,
+                    opacity: processingStage === 0 ? [1, 0.8, 1] : 0.9,
                   }}
-                  transition={{ duration: 1, repeat: processingStage === 0 ? Number.POSITIVE_INFINITY : 0 }}
+                  transition={{ duration: 1.2, repeat: processingStage === 0 ? Number.POSITIVE_INFINITY : 0 }}
                 />
                 <span className="text-white/90 text-sm">
                   {processingStage === 0 ? "Processing Document..." : "Document Processed"}
                 </span>
                 {processingStage === 0 && (
                   <motion.div className="ml-auto">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#c0c9ee' }} />
                   </motion.div>
                 )}
               </div>
               <div className="space-y-2">
-                <div className="h-2 bg-white/30 rounded-full overflow-hidden">
+                <div className="h-2 bg-white/20 rounded-full overflow-hidden">
                   <motion.div
-                    className="h-full bg-white"
+                    className="h-full"
+                    style={{ backgroundColor: '#c0c9ee' }}
                     animate={{ width: processingStage === 0 ? `${progress}%` : "100%" }}
                     transition={{ duration: 0.3 }}
                   />
@@ -530,7 +706,8 @@ function AdvancedProcessingDemo() {
                           {[0, 1, 2].map((i) => (
                             <motion.div
                               key={i}
-                              className="w-2 h-2 bg-white rounded-full"
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: '#c0c9ee' }}
                               animate={{ y: [0, -6, 0] }}
                               transition={{
                                 duration: 0.8,
@@ -634,3 +811,4 @@ function AdvancedProcessingDemo() {
     </div>
   )
 }
+  

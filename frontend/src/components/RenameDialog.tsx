@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Edit, FileText } from "lucide-react"
+import Spinner from "./Spinner"
 
 interface RenameDialogProps {
   open: boolean
@@ -91,7 +92,7 @@ export default function ImprovedRenameDialog({
             >
               {isLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <Spinner size={16} color="#ffffff" />
                   Renaming...
                 </div>
               ) : (

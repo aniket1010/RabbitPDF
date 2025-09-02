@@ -3,6 +3,7 @@
 import { useSession } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import Spinner from '@/components/Spinner';
 
 export default function Dashboard() {
   const { data: session, isPending } = useSession();
@@ -17,7 +18,7 @@ export default function Dashboard() {
   if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-gray-300 border-t-gray-600 rounded-full"></div>
+        <Spinner size={32} />
       </div>
     );
   }
