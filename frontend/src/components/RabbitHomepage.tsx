@@ -5,9 +5,9 @@ import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { Button } from "./ui/button"
 import { useSession } from "@/lib/auth-client"
-import { ArrowRight, MessageSquare, Zap, Shield, Brain, FileText, Upload, Menu, X } from "lucide-react"
+import { ArrowRight, MessageSquare, Zap, Shield, Brain, FileText, Menu } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { RabbitVideoLoader } from "./rabbit-video-loader"
+
 import { DotLottieReact } from "@lottiefiles/dotlottie-react"
 import { toast } from "sonner"
 import { countPdfPages, MAX_PDF_PAGES } from "@/lib/pdf"
@@ -266,8 +266,8 @@ export function RabbitHomepage() {
                 <div className="relative">
                   <h1 className="text-7xl md:text-8xl lg:text-9xl font-bold text-black leading-[0.85]">PDF</h1>
                   {/* Rabbit Lottie positioned exactly where the red dot is in the image */}
-                  <div className="absolute -right-12 md:-right-16 lg:-right-20 top-0 md:-top-2 lg:-top-4">
-                    <div className="w-16 h-16 md:w-20 md:h-20 lg:w-24 lg:h-24 flex items-center justify-center">
+                  <div className="absolute -right-16 md:-right-20 lg:-right-24 top-0 md:-top-4 lg:-top-6">
+                    <div className="w-24 h-24 md:w-32 md:h-32 lg:w-40 lg:h-40 flex items-center justify-center">
                       <DotLottieReact
                         src="https://lottie.host/41d0971c-d1c6-4f08-a29a-aefc83f45abb/PERTkoTdD2.lottie"
                         loop

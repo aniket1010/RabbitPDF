@@ -5,7 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, FileText, MessageSquare, Edit, Trash2, Settings, LogIn, LogOut, User } from "lucide-react"
+import { Plus, FileText, MessageSquare, Edit, Trash2, Settings, LogIn, LogOut, User, Sparkles } from "lucide-react"
 import { useRouter, usePathname } from "next/navigation"
 import { getConversations, deleteConversation, renameConversation } from "@/services/api"
 import ImprovedRenameDialog from "./RenameDialog"
@@ -727,12 +727,13 @@ export default function Sidebar({
                   onClick={handleNewChat}
                   className={
                     isDark
-                      ? "w-full h-11 rounded-xl font-medium transition-all duration-300 ease-out hover:shadow-lg transform hover:translate-y-[-1px] active:translate-y-0 bg-gradient-to-r from-white to-white/95 hover:from-white hover:to-white/90 text-black border border-white/20 hover:border-white/30 backdrop-blur-sm"
-                      : "w-full h-11 rounded-xl font-medium transition-all duration-300 ease-out hover:shadow-lg transform hover:translate-y-[-1px] active:translate-y-0 bg-gradient-to-r from-black to-black/95 hover:from-black hover:to-black/90 text-white border border-black/20 hover:border-black/30 backdrop-blur-sm"
+                      ? "w-full h-11 rounded-2xl font-medium transition-all duration-500 ease-out hover:shadow-2xl hover:shadow-blue-500/20 transform hover:translate-y-[-2px] hover:scale-[1.02] active:translate-y-0 active:scale-100 bg-gradient-to-r from-slate-100 via-blue-50 to-indigo-100 hover:from-white hover:via-blue-100 hover:to-indigo-200 text-slate-800 border border-blue-200/50 hover:border-blue-300/70 backdrop-blur-sm relative overflow-hidden group"
+                      : "w-full h-11 rounded-2xl font-medium transition-all duration-500 ease-out hover:shadow-2xl hover:shadow-indigo-500/25 transform hover:translate-y-[-2px] hover:scale-[1.02] active:translate-y-0 active:scale-100 bg-gradient-to-r from-slate-900 via-indigo-900 to-blue-900 hover:from-slate-800 hover:via-indigo-800 hover:to-blue-800 text-white border border-indigo-400/30 hover:border-indigo-300/50 backdrop-blur-sm relative overflow-hidden group"
                   }
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Chat
+                  <div className={`absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isDark ? 'from-blue-200/20 to-indigo-200/20' : 'from-indigo-400/10 to-blue-400/10'}`}></div>
+                  <Sparkles className="h-4 w-4 mr-2 relative z-10 group-hover:animate-pulse" />
+                  <span className="relative z-10">New Chat</span>
                 </Button>
               </div>
             )}
@@ -949,15 +950,16 @@ export default function Sidebar({
               <div className="px-3 pt-6 pb-4 flex-shrink-0">
                 <button
                   onClick={handleNewChat}
-                  className={`w-10 h-10 rounded-xl transition-all duration-300 ease-out flex items-center justify-center transform hover:translate-y-[-1px] active:translate-y-0 mx-auto hover:shadow-lg ${
+                  className={`w-10 h-10 rounded-2xl transition-all duration-500 ease-out flex items-center justify-center transform hover:translate-y-[-2px] hover:scale-110 active:translate-y-0 active:scale-100 mx-auto hover:shadow-2xl relative overflow-hidden group ${
                     isDark
-                      ? "bg-gradient-to-br from-white to-white/95 hover:from-white hover:to-white/90 text-black shadow-sm border border-white/20 hover:border-white/30 backdrop-blur-sm"
-                      : "bg-gradient-to-br from-black to-black/95 hover:from-black hover:to-black/90 text-white shadow-sm border border-black/20 hover:border-black/30 backdrop-blur-sm"
+                      ? "bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 hover:from-white hover:via-blue-100 hover:to-indigo-200 text-slate-800 shadow-lg border border-blue-200/50 hover:border-blue-300/70 backdrop-blur-sm hover:shadow-blue-500/20"
+                      : "bg-gradient-to-br from-slate-900 via-indigo-900 to-blue-900 hover:from-slate-800 hover:via-indigo-800 hover:to-blue-800 text-white shadow-lg border border-indigo-400/30 hover:border-indigo-300/50 backdrop-blur-sm hover:shadow-indigo-500/25"
                   }`}
                   title="New Chat"
                   aria-label="New Chat"
                 >
-                  <Plus className="h-4 w-4" />
+                  <div className={`absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isDark ? 'from-blue-200/20 to-indigo-200/20' : 'from-indigo-400/10 to-blue-400/10'}`}></div>
+                  <Sparkles className="h-4 w-4 relative z-10 group-hover:animate-pulse" />
                 </button>
               </div>
             )}

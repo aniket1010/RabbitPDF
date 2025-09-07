@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import AmbientBackground from "@/components/AmbientBackground";
 
 type Status = "idle" | "verifying" | "pending" | "success" | "error";
@@ -97,13 +98,13 @@ export default function VerifyEmailPage() {
 
         {((status === "pending" || status === "error") && searchParams.get("email")) && (
           <div className="space-y-3">
-            <button
-              className="px-4 py-2 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+            <Button
               onClick={resend}
               disabled={resending}
+              className="w-full bg-black text-white hover:bg-black/90 transition-all duration-200 px-6 py-3 rounded-2xl shadow-lg hover:shadow-xl transform hover:translate-y-[-1px] active:translate-y-0 disabled:opacity-50 disabled:transform-none disabled:shadow-lg font-medium"
             >
               {resending ? "Resending..." : "Resend verification email"}
-            </button>
+            </Button>
             <div className="text-xs text-muted-foreground">
               Didn’t get it? Check your spam folder or try resending.
             </div>

@@ -2,7 +2,6 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { getRandomAvatar } from "@/lib/avatars";
 
 export async function GET(request: Request) {
   try {
@@ -30,12 +29,11 @@ export async function GET(request: Request) {
         await prisma.user.update({ where: { id: existingUser.id }, data: { emailVerified: true } });
         userId = existingUser.id;
       } else {
-        const randomAvatar = getRandomAvatar();
         const newUser = await prisma.user.create({
           data: {
             email: pendingUser.email,
             name: pendingUser.name,
-            image: randomAvatar, // Use random avatar instead of pendingUser.image
+            image: pendingUser.image,
             emailVerified: true,
           },
         });

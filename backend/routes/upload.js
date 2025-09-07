@@ -9,7 +9,6 @@ const { verifyAuth } = require('../utils/auth');
 // Note: Removed heavy text splitter dependency; using lightweight chunking
 const path = require('path');
 const fs = require('fs');
-const { getRandomAvatar } = require('../utils/avatars');
 
 // Set up Multer disk storage
 const storage = multer.diskStorage({
@@ -126,15 +125,13 @@ router.post('/', verifyAuth, upload.single('file'), validatePDF, async (req, res
     
     if (!user) {
       try {
-        // Create user if they don't exist with random avatar
-        const randomAvatar = getRandomAvatar();
+        // Create user if they don't exist
         user = await prisma.user.create({
           data: {
             id: req.userId,
             email: req.userEmail,
             name: req.userName || 'User',
             emailVerified: new Date(), // Mark as verified since they signed in via OAuth
-            image: randomAvatar, // Assign random avatar instead of OAuth profile picture
           }
         });
       } catch (userCreateError) {

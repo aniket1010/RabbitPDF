@@ -51,12 +51,22 @@ export default function SettingsDialog({ open, onOpenChange }: SettingsDialogPro
   useEffect(() => {
     if (open && session?.user) {
       console.log("🔍 [Settings] Loading user data from session:", session.user)
-      setCurrentUsername(session.user.name || "")
-      setCurrentAvatar(session.user.image || "/avatars/Horse.png")
+      // Only set initial state if we don't already have current data (to prevent overwriting WebSocket updates)
+      setCurrentUsername(prev => prev || session.user.name || "")
+      setCurrentAvatar(prev => prev || session.user.image || "/avatars/Horse.png")
     } else if (open) {
       console.log("🔍 [Settings] No session data available:", { open, session })
     }
   }, [open, session])
+
+  // Also update when session data changes (e.g., after refresh), but don't override WebSocket updates
+  useEffect(() => {
+    if (session?.user && !currentUsername && !currentAvatar) {
+      // Only update if we don't have current data (initial load)
+      setCurrentUsername(session.user.name || "")
+      setCurrentAvatar(session.user.image || "/avatars/Horse.png")
+    }
+  }, [session?.user?.name, session?.user?.image, currentUsername, currentAvatar])
 
   // Listen for real-time profile updates
   useEffect(() => {
