@@ -63,8 +63,32 @@ app.use('/conversation', conversationRoutes);
 app.use('/chat', chatRoutes);
 app.use('/upload', uploadRoutes);
 
+// Internal API authentication middleware (for worker communication)
+const authenticateInternal = (req, res, next) => {
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  
+  // In development, allow without secret for easier testing
+  if (process.env.NODE_ENV === 'development' && !internalSecret) {
+    return next();
+  }
+  
+  // In production, require secret
+  if (!internalSecret) {
+    console.warn('⚠️ [Security] INTERNAL_API_SECRET not set, internal endpoints are insecure!');
+    return next(); // Allow but warn
+  }
+  
+  const providedSecret = req.headers['x-internal-secret'];
+  if (providedSecret !== internalSecret) {
+    console.warn('⚠️ [Security] Invalid internal API secret provided');
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  next();
+};
+
 // Internal API endpoints (for worker communication)
-app.post('/internal/pdf-complete', async (req, res) => {
+app.post('/internal/pdf-complete', authenticateInternal, async (req, res) => {
   try {
     const { conversationId } = req.body;
     if (!conversationId) {

@@ -1,0 +1,179 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: chatpdf-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chatpdf_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-chatpdf_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - chatpdf-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chatpdf_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for BullMQ
+  redis:
+    image: redis:7-alpine
+    container_name: chatpdf-redis
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - chatpdf-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatpdf-backend
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatpdf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatpdf_production}
+      REDIS_URL: redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+      USE_QUEUE: ${USE_QUEUE:-true}
+      BACKEND_URL: http://backend:5000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_INDEX_NAME: ${PINECONE_INDEX_NAME}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      MAIL_FROM: ${MAIL_FROM}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      AWS_REGION: ${AWS_REGION}
+    volumes:
+      - ./backend/uploads:/app/uploads
+    ports:
+      - "5000:5000"
+    networks:
+      - chatpdf-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PDF Processing Worker (BullMQ Worker)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatpdf-worker
+    command: npm run worker
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatpdf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatpdf_production}
+      REDIS_URL: redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+      BACKEND_URL: http://backend:5000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PINECONE_API_KEY: ${PINECONE_API_KEY}
+      PINECONE_INDEX_NAME: ${PINECONE_INDEX_NAME}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      AWS_REGION: ${AWS_REGION}
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - chatpdf-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  # Frontend Next.js Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: chatpdf-frontend
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatpdf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatpdf_production}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+    ports:
+      - "3000:3000"
+    networks:
+      - chatpdf-network
+    depends_on:
+      - backend
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  chatpdf-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+

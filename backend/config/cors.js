@@ -1,12 +1,17 @@
 // Central CORS configuration so both Express and Socket.IO stay in sync
 
 const allowedOrigins = [
+  // Development origins
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3001',
   'http://localhost:4000',
-  'http://127.0.0.1:4000'
+  'http://127.0.0.1:4000',
+  // Production origins - UPDATE THESE
+  'https://yourdomain.com',
+  'https://www.yourdomain.com',
+  'https://api.yourdomain.com'
 ];
 
 const corsConfig = {

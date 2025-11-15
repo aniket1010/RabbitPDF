@@ -1,0 +1,192 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatpdf_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: |
+          backend/package-lock.json
+          frontend/package-lock.json
+    
+    # Backend Tests
+    - name: Install Backend Dependencies
+      working-directory: ./backend
+      run: npm ci
+    
+    - name: Generate Prisma Client
+      working-directory: ./backend
+      run: npx prisma generate
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chatpdf_test
+    
+    - name: Run Database Migrations
+      working-directory: ./backend
+      run: npx prisma migrate deploy
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chatpdf_test
+    
+    - name: Run Backend Tests
+      working-directory: ./backend
+      run: npm test
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chatpdf_test
+        REDIS_URL: redis://localhost:6379
+        NODE_ENV: test
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+    
+    # Frontend Tests
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm ci
+    
+    - name: Run Frontend Lint
+      working-directory: ./frontend
+      run: npm run lint
+    
+    - name: Build Frontend
+      working-directory: ./frontend
+      run: npm run build
+      env:
+        NEXT_PUBLIC_API_BASE: http://localhost:5000
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chatpdf_test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{ matrix.service }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        script: |
+          cd /home/deploy/chatpdf
+          
+          # Pull latest images
+          docker compose -f docker-compose.production.yml pull
+          
+          # Run database migrations
+          docker compose -f docker-compose.production.yml run --rm backend npx prisma migrate deploy
+          
+          # Restart services with zero downtime
+          docker compose -f docker-compose.production.yml up -d --remove-orphans
+          
+          # Clean up old images
+          docker image prune -f
+          
+          # Health check
+          sleep 30
+          curl -f http://localhost/health || exit 1
+          
+          echo "✅ Deployment successful!"
+
+  notify:
+    needs: [test, build-and-push, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify deployment status
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()
+
+
+
+
+

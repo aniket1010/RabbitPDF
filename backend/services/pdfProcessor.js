@@ -156,9 +156,16 @@ async function processPdf({ filePath, conversationId, originalName }) {
     // Notify API to emit WebSocket and process any pending messages (works in both API and worker contexts)
     try {
       const fetch = require('node-fetch');
-      await fetch(`http://127.0.0.1:${process.env.PORT || 5000}/internal/pdf-complete`, {
+      // Use Docker service name or environment variable for backend URL
+      const backendUrl = process.env.BACKEND_URL || `http://backend:${process.env.PORT || 5000}`;
+      const internalSecret = process.env.INTERNAL_API_SECRET;
+      
+      await fetch(`${backendUrl}/internal/pdf-complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(internalSecret && { 'x-internal-secret': internalSecret })
+        },
         body: JSON.stringify({ conversationId })
       });
       console.log(`📡 [PDF] Notified API of completion for ${conversationId}`);
