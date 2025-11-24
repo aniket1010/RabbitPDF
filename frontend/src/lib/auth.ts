@@ -91,6 +91,12 @@ export const auth = betterAuth({
         crossSubDomainCookies: {
             enabled: false,
         },
+        cookieOptions: {
+            sameSite: 'lax',
+            secure: true,
+            httpOnly: true,
+            path: '/',
+        },
         generateId: () => randomUUID(),
     },
 });
