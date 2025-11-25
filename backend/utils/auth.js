@@ -12,7 +12,13 @@ async function verifyAuth(req, res, next) {
     console.log('🔍 [Auth] Request URL:', req.url);
     
     // Parse cookies if they're not already parsed by cookie-parser
-    let sessionToken = req.cookies && (req.cookies['better-auth.session_token'] || req.cookies['better-auth.session-token']);
+    // Check for both regular and __Secure- prefixed cookies
+    let sessionToken = req.cookies && (
+      req.cookies['better-auth.session_token'] || 
+      req.cookies['better-auth.session-token'] ||
+      req.cookies['__Secure-better-auth.session_token'] ||
+      req.cookies['__Secure-better-auth.session-token']
+    );
     
     if (!sessionToken && req.headers.cookie) {
       const cookies = {};
@@ -23,7 +29,10 @@ async function verifyAuth(req, res, next) {
         }
       });
       console.log('🔍 [Auth] Manually parsed cookies:', JSON.stringify(cookies));
-      sessionToken = cookies['better-auth.session_token'] || cookies['better-auth.session-token'];
+      sessionToken = cookies['better-auth.session_token'] || 
+                     cookies['better-auth.session-token'] ||
+                     cookies['__Secure-better-auth.session_token'] ||
+                     cookies['__Secure-better-auth.session-token'];
     }
     
     // DEBUG: Log what we received
@@ -126,7 +135,10 @@ async function verifyWebSocketAuth(socket) {
           cookies[parts[0]] = decodeURIComponent(parts[1]);
         }
       });
-      sessionToken = cookies['better-auth.session_token'] || cookies['better-auth.session-token'];
+      sessionToken = cookies['better-auth.session_token'] || 
+                     cookies['better-auth.session-token'] ||
+                     cookies['__Secure-better-auth.session_token'] ||
+                     cookies['__Secure-better-auth.session-token'];
     }
     
     // DEBUG: Log WebSocket auth attempt
@@ -193,7 +205,13 @@ async function verifyWebSocketAuth(socket) {
 async function optionalAuth(req, res, next) {
   try {
     // Parse cookies if they're not already parsed by cookie-parser
-    let sessionToken = req.cookies && (req.cookies['better-auth.session_token'] || req.cookies['better-auth.session-token']);
+    // Check for both regular and __Secure- prefixed cookies
+    let sessionToken = req.cookies && (
+      req.cookies['better-auth.session_token'] || 
+      req.cookies['better-auth.session-token'] ||
+      req.cookies['__Secure-better-auth.session_token'] ||
+      req.cookies['__Secure-better-auth.session-token']
+    );
     
     if (!sessionToken && req.headers.cookie) {
       const cookies = {};
@@ -203,7 +221,10 @@ async function optionalAuth(req, res, next) {
           cookies[parts[0]] = decodeURIComponent(parts[1]);
         }
       });
-      sessionToken = cookies['better-auth.session_token'] || cookies['better-auth.session-token'];
+      sessionToken = cookies['better-auth.session_token'] || 
+                     cookies['better-auth.session-token'] ||
+                     cookies['__Secure-better-auth.session_token'] ||
+                     cookies['__Secure-better-auth.session-token'];
     }
     
     if (sessionToken) {
