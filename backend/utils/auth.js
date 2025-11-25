@@ -13,12 +13,22 @@ async function verifyAuth(req, res, next) {
     
     // Parse cookies if they're not already parsed by cookie-parser
     // Prioritize __Secure- prefixed cookies (newer, more secure)
+    // Check parsed cookies first
     let sessionToken = req.cookies && (
       req.cookies['__Secure-better-auth.session_token'] ||
       req.cookies['__Secure-better-auth.session-token'] ||
       req.cookies['better-auth.session_token'] || 
       req.cookies['better-auth.session-token']
     );
+    
+    // DEBUG: Log which cookie was found
+    if (sessionToken) {
+      const cookieName = req.cookies?.['__Secure-better-auth.session_token'] ? '__Secure-better-auth.session_token' :
+                         req.cookies?.['__Secure-better-auth.session-token'] ? '__Secure-better-auth.session-token' :
+                         req.cookies?.['better-auth.session_token'] ? 'better-auth.session_token' :
+                         'better-auth.session-token';
+      console.log('🔍 [Auth] Using cookie:', cookieName);
+    }
     
     if (!sessionToken && req.headers.cookie) {
       const cookies = {};
