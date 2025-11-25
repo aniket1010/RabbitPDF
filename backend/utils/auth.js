@@ -4,6 +4,13 @@ const prisma = require('../prismaClient');
 // Better Auth session verification
 async function verifyAuth(req, res, next) {
   try {
+    // DEBUG: Log raw cookie header FIRST
+    console.log('🔍 [Auth] Raw cookie header:', req.headers.cookie || 'UNDEFINED');
+    console.log('🔍 [Auth] Parsed cookies object:', JSON.stringify(req.cookies || {}));
+    console.log('🔍 [Auth] Request method:', req.method);
+    console.log('🔍 [Auth] Request path:', req.path);
+    console.log('🔍 [Auth] Request URL:', req.url);
+    
     // Parse cookies if they're not already parsed by cookie-parser
     let sessionToken = req.cookies && (req.cookies['better-auth.session_token'] || req.cookies['better-auth.session-token']);
     
@@ -15,10 +22,19 @@ async function verifyAuth(req, res, next) {
           cookies[parts[0]] = decodeURIComponent(parts[1]);
         }
       });
+      console.log('🔍 [Auth] Manually parsed cookies:', JSON.stringify(cookies));
       sessionToken = cookies['better-auth.session_token'] || cookies['better-auth.session-token'];
     }
     
+    // DEBUG: Log what we received
+    console.log('🔍 [Auth] Session token received:', sessionToken ? 'EXISTS' : 'MISSING');
+    if (sessionToken) {
+      console.log('🔍 [Auth] Token preview:', sessionToken.substring(0, 30) + '...');
+      console.log('🔍 [Auth] Token length:', sessionToken.length);
+    }
+    
     if (!sessionToken) {
+      console.warn('⚠️ [Auth] No session token found in cookies');
       return res.status(401).json({ 
         error: 'Authentication required',
         message: 'Please sign in to access this resource'
@@ -27,13 +43,42 @@ async function verifyAuth(req, res, next) {
 
     // Better Auth uses signed tokens - extract the session ID (part before the dot)
     const sessionId = sessionToken.split('.')[0];
-    // Try to find the session using the session ID
-    const userSession = await prisma.session.findUnique({
-      where: { token: sessionId },
+    console.log('🔍 [Auth] Extracted session ID:', sessionId);
+    console.log('🔍 [Auth] Session ID length:', sessionId.length);
+    console.log('🔍 [Auth] Full token:', sessionToken);
+    
+    // Better-auth stores full signed token in DB, so use startsWith to match
+    const userSession = await prisma.session.findFirst({
+      where: { 
+        token: { startsWith: sessionId }
+      },
       include: { user: true }
     });
 
-    if (!userSession || userSession.expiresAt < new Date()) {
+    console.log('🔍 [Auth] Session lookup result:', userSession ? 'FOUND' : 'NOT FOUND');
+    if (userSession) {
+      console.log('🔍 [Auth] Session userId:', userSession.userId);
+      console.log('🔍 [Auth] Session expiresAt:', userSession.expiresAt);
+    } else {
+      // DEBUG: Check what tokens exist in database
+      const allSessions = await prisma.session.findMany({
+        select: { token: true, userId: true },
+        take: 3,
+        orderBy: { expiresAt: 'desc' }
+      });
+      console.log('🔍 [Auth] Available session tokens in DB (first 20 chars):', allSessions.map(s => s.token.substring(0, 20)));
+    }
+
+    if (!userSession) {
+      console.warn('⚠️ [Auth] Session not found in database');
+      return res.status(401).json({ 
+        error: 'Authentication required',
+        message: 'Please sign in to access this resource'
+      });
+    }
+
+    if (userSession.expiresAt && userSession.expiresAt < new Date()) {
+      console.warn('⚠️ [Auth] Session expired:', userSession.expiresAt);
       return res.status(401).json({ 
         error: 'Authentication required',
         message: 'Please sign in to access this resource'
@@ -44,6 +89,13 @@ async function verifyAuth(req, res, next) {
     req.userId = userSession.userId;
     req.userEmail = userSession.user.email;
     req.userName = userSession.user.name;
+
+    // Log for debugging
+    console.log('✅ [Auth] Authenticated user:', {
+      userId: req.userId,
+      email: req.userEmail,
+      name: req.userName
+    });
 
     next();
   } catch (error) {
@@ -77,6 +129,12 @@ async function verifyWebSocketAuth(socket) {
       sessionToken = cookies['better-auth.session_token'] || cookies['better-auth.session-token'];
     }
     
+    // DEBUG: Log WebSocket auth attempt
+    console.log('🔍 [WebSocket Auth] Session token received:', sessionToken ? 'EXISTS' : 'MISSING');
+    if (sessionToken) {
+      console.log('🔍 [WebSocket Auth] Token preview:', sessionToken.substring(0, 30) + '...');
+    }
+    
     if (!sessionToken) {
       return { 
         authenticated: false, 
@@ -86,16 +144,20 @@ async function verifyWebSocketAuth(socket) {
 
     // Better Auth uses signed tokens - extract the session ID (part before the dot)
     const sessionId = sessionToken.split('.')[0];
+    console.log('🔍 [WebSocket Auth] Extracted session ID:', sessionId);
+    console.log('🔍 [WebSocket Auth] Full token:', sessionToken);
 
-    // Verify the session token against the database
-    const session = await prisma.session.findUnique({
+    // Better-auth stores full signed token in DB, so use startsWith to match
+    const session = await prisma.session.findFirst({
       where: { 
-        token: sessionId 
+        token: { startsWith: sessionId }
       },
       include: {
         user: true
       }
     });
+
+    console.log('🔍 [WebSocket Auth] Session lookup result:', session ? 'FOUND' : 'NOT FOUND');
     
     if (!session) {
       return { 
