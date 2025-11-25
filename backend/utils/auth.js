@@ -55,14 +55,25 @@ async function verifyAuth(req, res, next) {
     console.log('🔍 [Auth] Extracted session ID:', sessionId);
     console.log('🔍 [Auth] Session ID length:', sessionId.length);
     console.log('🔍 [Auth] Full token:', sessionToken);
+    console.log('🔍 [Auth] Looking for token starting with:', sessionId);
     
-    // Better-auth stores full signed token in DB, so use startsWith to match
-    const userSession = await prisma.session.findFirst({
-      where: { 
-        token: { startsWith: sessionId }
-      },
+    // Better-auth stores just the session ID (32 chars) in DB, so use exact match or startsWith
+    // Try exact match first (since DB has 32-char tokens)
+    let userSession = await prisma.session.findUnique({
+      where: { token: sessionId },
       include: { user: true }
     });
+    
+    // If not found, try startsWith (in case DB has full signed token)
+    if (!userSession) {
+      console.log('🔍 [Auth] Exact match failed, trying startsWith...');
+      userSession = await prisma.session.findFirst({
+        where: { 
+          token: { startsWith: sessionId }
+        },
+        include: { user: true }
+      });
+    }
 
     console.log('🔍 [Auth] Session lookup result:', userSession ? 'FOUND' : 'NOT FOUND');
     if (userSession) {
@@ -158,12 +169,28 @@ async function verifyWebSocketAuth(socket) {
     const sessionId = sessionToken.split('.')[0];
     console.log('🔍 [WebSocket Auth] Extracted session ID:', sessionId);
     console.log('🔍 [WebSocket Auth] Full token:', sessionToken);
+    console.log('🔍 [WebSocket Auth] Looking for token starting with:', sessionId);
 
-    // Better-auth stores full signed token in DB, so use startsWith to match
-    const session = await prisma.session.findFirst({
-      where: { 
-        token: { startsWith: sessionId }
-      },
+    // Better-auth stores just the session ID (32 chars) in DB, so use exact match or startsWith
+    // Try exact match first (since DB has 32-char tokens)
+    let session = await prisma.session.findUnique({
+      where: { token: sessionId },
+    });
+    
+    // If not found, try startsWith (in case DB has full signed token)
+    if (!session) {
+      console.log('🔍 [WebSocket Auth] Exact match failed, trying startsWith...');
+      session = await prisma.session.findFirst({
+        where: { 
+          token: { startsWith: sessionId }
+        },
+      });
+    }
+    
+    // If found, get full session with user
+    if (session) {
+      session = await prisma.session.findUnique({
+        where: { token: session.token },
       include: {
         user: true
       }
