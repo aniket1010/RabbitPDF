@@ -50,15 +50,22 @@ router.get('/:conversationId', verifyAuth, async (req, res) => {
   }
 });
 
-router.get('/:conversationId/details', async (req, res) => {
+router.get('/:conversationId/details', verifyAuth, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId }
+    
+    // First verify the conversation belongs to the user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
     });
     
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
+      return res.status(404).json({ 
+        error: 'Conversation not found or access denied' 
+      });
     }
     
     res.json(conversation);
@@ -175,14 +182,6 @@ router.patch('/:conversationId/rename', verifyAuth, async (req, res) => {
         conversationId,
         newTitle: newTitle.trim()
       });
-      
-      // Also emit to all connected sockets for debugging
-      console.log(`📡 [Rename] Also broadcasting to all sockets for debugging`);
-      io.emit('conversationRenamed', {
-        conversationId,
-        newTitle: newTitle.trim(),
-        debug: true
-      });
     } else {
       console.log(`❌ [Rename] No WebSocket instance found`);
     }
@@ -202,18 +201,24 @@ router.patch('/:conversationId/rename', verifyAuth, async (req, res) => {
 });
 
 // Serve the PDF file for a conversation
-router.get('/:conversationId/pdf', async (req, res) => {
+router.get('/:conversationId/pdf', verifyAuth, async (req, res) => {
   try {
     const { conversationId } = req.params;
     console.log('Fetching PDF for conversation:', conversationId);
     
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: conversationId }
+    // First verify the conversation belongs to the user
+    const conversation = await prisma.conversation.findFirst({
+      where: { 
+        id: conversationId,
+        userId: req.userId // ← Security: Only user's conversations!
+      }
     });
 
     if (!conversation) {
-      console.log('Conversation not found:', conversationId);
-      return res.status(404).json({ error: 'Conversation not found' });
+      console.log('Conversation not found or access denied:', conversationId);
+      return res.status(404).json({ 
+        error: 'Conversation not found or access denied' 
+      });
     }
 
     if (!conversation.filePath) {

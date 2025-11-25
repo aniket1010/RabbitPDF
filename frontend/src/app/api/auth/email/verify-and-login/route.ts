@@ -8,9 +8,12 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const email = url.searchParams.get("email");
     const token = url.searchParams.get("token");
+    
+    // Use NEXT_PUBLIC_APP_URL for redirects (not internal Docker hostname)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
 
     if (!email || !token) {
-      return NextResponse.redirect(new URL("/sign-in", url));
+      return NextResponse.redirect(new URL("/sign-in", appUrl));
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -63,19 +66,19 @@ export async function GET(request: Request) {
       if (verification) {
         const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
         if (!existingUser) {
-          return NextResponse.redirect(new URL(`/sign-in?verified=1&email=${encodeURIComponent(normalizedEmail)}`, url));
+          return NextResponse.redirect(new URL(`/sign-in?verified=1&email=${encodeURIComponent(normalizedEmail)}`, appUrl));
         }
         await prisma.user.update({ where: { id: existingUser.id }, data: { emailVerified: true } });
         await prisma.verification.delete({ where: { id: verification.id } }).catch(() => {});
         userId = existingUser.id;
       } else {
-        return NextResponse.redirect(new URL(`/sign-in?email=${encodeURIComponent(normalizedEmail)}&verify_error=1`, url));
+        return NextResponse.redirect(new URL(`/sign-in?email=${encodeURIComponent(normalizedEmail)}&verify_error=1`, appUrl));
       }
     }
 
     // If for some reason userId is still null, redirect to sign-in
     if (!userId) {
-      return NextResponse.redirect(new URL(`/sign-in?email=${encodeURIComponent(normalizedEmail)}`, url));
+      return NextResponse.redirect(new URL(`/sign-in?email=${encodeURIComponent(normalizedEmail)}`, appUrl));
     }
 
     // 3) Create a session and redirect home
@@ -84,7 +87,7 @@ export async function GET(request: Request) {
       const api: any = (auth as any).api;
       if (api && typeof api.createSession === "function") {
         const sessionResponse: Response = await api.createSession({ userId }, { headers: request.headers });
-        const redirect = NextResponse.redirect(new URL("/", url));
+        const redirect = NextResponse.redirect(new URL("/", appUrl));
         const setCookie = sessionResponse.headers.get("set-cookie");
         if (setCookie) {
           redirect.headers.append("set-cookie", setCookie);
@@ -96,11 +99,11 @@ export async function GET(request: Request) {
     }
 
     // Fallback: redirect to sign-in with verified flag
-    return NextResponse.redirect(new URL(`/sign-in?verified=1&email=${encodeURIComponent(normalizedEmail)}`, url));
+    return NextResponse.redirect(new URL(`/sign-in?verified=1&email=${encodeURIComponent(normalizedEmail)}`, appUrl));
   } catch (e) {
     // On error, send user to sign-in
-    const url = new URL(request.url);
-    return NextResponse.redirect(new URL(`/sign-in`, url));
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
+    return NextResponse.redirect(new URL(`/sign-in`, appUrl));
   }
 }
 

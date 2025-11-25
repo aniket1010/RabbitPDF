@@ -47,7 +47,7 @@ services:
       dockerfile: Dockerfile
     container_name: chatpdf-backend
     env_file:
-      - .env.production
+      - .env
     environment:
       NODE_ENV: production
       PORT: 5000
@@ -102,7 +102,7 @@ services:
     container_name: chatpdf-worker
     command: npm run worker
     env_file:
-      - .env.production
+      - .env
     environment:
       NODE_ENV: production
       PORT: 5000
@@ -138,9 +138,16 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_ENV: production
+        BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
+        GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+        GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+        GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
     container_name: chatpdf-frontend
     env_file:
-      - .env.production
+      - .env
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-chatpdf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatpdf_production}

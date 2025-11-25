@@ -42,10 +42,15 @@ export function useWebSocket(): UseWebSocketReturn {
 
   useEffect(() => {
     // Initialize WebSocket connection
-    const serverUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
+    // Socket.IO connects directly to the domain (not /api) because nginx routes /socket.io directly
+    const serverUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                      (process.env.NEXT_PUBLIC_API_BASE ? 
+                        process.env.NEXT_PUBLIC_API_BASE.replace('/api', '') : 
+                        'http://localhost:5000');
     console.log('🔌 [WebSocket] Connecting to:', serverUrl);
     console.log('🔌 [WebSocket] Environment:', {
       NODE_ENV: process.env.NODE_ENV,
+      APP_URL: process.env.NEXT_PUBLIC_APP_URL,
       API_BASE: process.env.NEXT_PUBLIC_API_BASE
     });
     

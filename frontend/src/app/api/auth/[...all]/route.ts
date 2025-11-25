@@ -12,9 +12,27 @@ const addCorsHeaders = async (response: Response, request?: Request) => {
   
   // Clone response to preserve body and status
   const responseBody = await response.clone().text()
-  const newHeaders = new Headers(response.headers)
+  const newHeaders = new Headers()
   
-  // Add CORS headers (this won't remove Set-Cookie)
+  // IMPORTANT: Copy all headers from original response FIRST
+  // The Headers constructor doesn't properly copy Set-Cookie headers (they can be multiple)
+  response.headers.forEach((value, key) => {
+    newHeaders.append(key, value)
+  })
+  
+  // Also explicitly copy Set-Cookie headers using getSetCookie() if available
+  // This ensures multiple Set-Cookie headers are preserved
+  const setCookies = response.headers.getSetCookie?.() || []
+  if (setCookies.length > 0) {
+    // Clear any existing Set-Cookie and re-add all of them
+    newHeaders.delete('Set-Cookie')
+    setCookies.forEach(cookie => {
+      newHeaders.append('Set-Cookie', cookie)
+    })
+    console.log('🍪 [Auth Route] Preserving Set-Cookie headers:', setCookies.length, 'cookies')
+  }
+  
+  // Add CORS headers
   newHeaders.set('Access-Control-Allow-Origin', origin)
   newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   newHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')

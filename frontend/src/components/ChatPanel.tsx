@@ -232,15 +232,22 @@ export default function ChatPanel({
       setIsPdfProcessing(false)
       setHasUserSentDuringProcessing(false)
       
-      // Check if we have pending messages that will now be processed
-      const pendingCount = messages.filter(m => m.status === 'pending').length
-      if (pendingCount > 0) {
-        console.log(`🔄 [WebSocket] PDF processing complete, ${pendingCount} pending messages will be processed`)
-        setIsAnalyzing(true) // Keep the loader going for pending message processing
-      }
-      
       // Refresh messages to get any newly processed pending messages
-      loadMessages()
+      loadMessages().then((loadedMessages) => {
+        // Check if we still have pending messages after loading
+        const stillPending = loadedMessages?.filter((m: any) => m.status === 'pending').length || 0
+        if (stillPending === 0) {
+          console.log('✅ [WebSocket] No pending messages after PDF complete, clearing loader')
+          setIsAnalyzing(false)
+        } else {
+          console.log(`🔄 [WebSocket] PDF processing complete, ${stillPending} pending messages will be processed`)
+          setIsAnalyzing(true) // Keep the loader going for pending message processing
+        }
+      }).catch((err) => {
+        console.error('❌ [WebSocket] Error loading messages after PDF complete:', err)
+        // Still clear the loader on error
+        setIsAnalyzing(false)
+      })
 
       // Do not trigger server-side processing from client; server will handle it.
     }
@@ -324,7 +331,7 @@ export default function ChatPanel({
   }, [conversationId, hasPending])
 
   const loadMessages = useCallback(async () => {
-    if (!conversationId) return
+    if (!conversationId) return []
     console.log('Loading messages for conversation:', conversationId)
     setIsLoading(true)
     setError(null)
@@ -339,13 +346,16 @@ export default function ChatPanel({
         }))
         console.log('Processed messages:', fetchedMessages)
         setMessages(fetchedMessages)
+        return fetchedMessages
       } else {
         console.error("API did not return an array of messages:", fetchedMessagesRaw)
         setError("Failed to load conversation due to invalid data.")
+        return []
       }
     } catch (err) {
       console.error("Failed to load messages:", err)
       setError("Failed to load messages. Please try again.")
+      return []
     } finally {
       setIsLoading(false)
     }

@@ -11,6 +11,13 @@ const manrope = Manrope({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "RabbitPDF",
   description: "Chat with your PDF documents using AI",
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: "cover",
+  },
 };
 
 export default function RootLayout({
@@ -19,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-       <body className={`${manrope.className} antialiased`}>
+    <html lang="en" className="h-full">
+       <body className={`${manrope.className} antialiased h-full`}>
         <Providers>
           <AppShell>
             {children}

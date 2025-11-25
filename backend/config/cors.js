@@ -8,10 +8,9 @@ const allowedOrigins = [
   'http://127.0.0.1:3001',
   'http://localhost:4000',
   'http://127.0.0.1:4000',
-  // Production origins - UPDATE THESE
-  'https://yourdomain.com',
-  'https://www.yourdomain.com',
-  'https://api.yourdomain.com'
+  // Production origins
+  'https://rabbitpdf.in',
+  'https://www.rabbitpdf.in'
 ];
 
 const corsConfig = {

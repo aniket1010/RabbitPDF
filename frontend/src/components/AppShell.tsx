@@ -20,7 +20,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     .join(" ");
 
   return (
-    <div className="min-h-screen bg-white overflow-x-hidden">
+    <div className="min-h-screen min-h-[100dvh] bg-white overflow-x-hidden">
       {/* Fixed Sidebar - Hidden on auth pages and on mobile */}
       {!isAuthRoute && (
         <div className="hidden md:block">
