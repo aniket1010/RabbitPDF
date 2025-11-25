@@ -205,10 +205,11 @@ async function verifyWebSocketAuth(socket) {
     if (session) {
       session = await prisma.session.findUnique({
         where: { token: session.token },
-      include: {
-        user: true
-      }
-    });
+        include: {
+          user: true
+        }
+      });
+    }
 
     console.log('🔍 [WebSocket Auth] Session lookup result:', session ? 'FOUND' : 'NOT FOUND');
     
