@@ -2,12 +2,16 @@ const { Queue } = require('bullmq');
 
 // Parse Redis URL to handle password authentication
 function getRedisConnection() {
-  const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+  const redisUrl = process.env.REDIS_URL;
   const redisPassword = process.env.REDIS_PASSWORD;
   
+  console.log('🔧 [Redis] Configuring connection...');
+  console.log('🔧 [Redis] REDIS_URL:', redisUrl ? '[SET]' : '[NOT SET]');
+  console.log('🔧 [Redis] REDIS_PASSWORD:', redisPassword ? '[SET]' : '[NOT SET]');
+  
   try {
-    // If URL contains password or REDIS_PASSWORD is set, parse URL
-    if (redisUrl.includes('@') || redisPassword) {
+    // If REDIS_URL is set and contains auth info, parse it
+    if (redisUrl && redisUrl.includes('@')) {
       const url = new URL(redisUrl);
       const connection = {
         host: url.hostname || 'redis',
@@ -26,22 +30,34 @@ function getRedisConnection() {
         connection.db = parseInt(url.pathname.slice(1));
       }
       
+      console.log('🔧 [Redis] Parsed connection:', { host: connection.host, port: connection.port, hasPassword: !!connection.password });
       return connection;
     }
     
-    // Simple connection for local development (no password)
-    return {
+    // Use REDIS_PASSWORD if set, connect to 'redis' host (Docker service name)
+    const connection = {
       host: process.env.REDIS_HOST || 'redis',
       port: parseInt(process.env.REDIS_PORT) || 6379,
     };
+    
+    if (redisPassword) {
+      connection.password = redisPassword;
+    }
+    
+    console.log('🔧 [Redis] Simple connection:', { host: connection.host, port: connection.port, hasPassword: !!connection.password });
+    return connection;
   } catch (error) {
     console.warn('⚠️ [Redis] Error parsing REDIS_URL, using defaults:', error.message);
     // Fallback to simple connection
-    return {
+    const connection = {
       host: 'redis',
       port: 6379,
-      password: redisPassword || undefined,
     };
+    if (redisPassword) {
+      connection.password = redisPassword;
+    }
+    console.log('🔧 [Redis] Fallback connection:', { host: connection.host, port: connection.port, hasPassword: !!connection.password });
+    return connection;
   }
 }
 

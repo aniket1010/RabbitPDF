@@ -1,54 +1,60 @@
-# RabbitPDF
+# RabbitPDF 🐰📄
 
-A full-stack application that allows users to upload PDF documents and chat with them using AI. Built with Next.js, Express.js, and PostgreSQL.
+A full-stack application that allows users to upload PDF documents and chat with them using AI. Built with Next.js, Express.js, PostgreSQL, and Docker.
 
 ## 🚀 Features
 
 - **PDF Upload & Processing**: Upload PDF documents and extract text content
 - **AI-Powered Chat**: Ask questions about your uploaded PDFs using OpenAI
-- **User Authentication**: Google and GitHub OAuth integration with NextAuth
-- **Real-time Communication**: WebSocket support for live chat
+- **User Authentication**: Google, GitHub OAuth, and email/password authentication
+- **Real-time Communication**: WebSocket support for live chat updates
 - **Vector Search**: Pinecone integration for semantic search across documents
+- **Queue Processing**: BullMQ with Redis for background PDF processing
 - **Database Storage**: PostgreSQL with Prisma ORM for data persistence
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **Next.js 15** - React framework
-- **NextAuth.js** - Authentication
+- **Next.js 15** - React framework with App Router
+- **Better Auth** - Authentication library
 - **Tailwind CSS** - Styling
 - **React PDF Viewer** - PDF display
 - **Socket.io Client** - Real-time communication
-- **Axios** - HTTP client
+- **Framer Motion** - Animations
 
 ### Backend
 - **Express.js** - Node.js web framework
 - **Prisma** - Database ORM
 - **PostgreSQL** - Database
+- **Redis** - Queue and caching
+- **BullMQ** - Job queue for PDF processing
 - **OpenAI** - AI/LLM integration
 - **Pinecone** - Vector database
 - **Socket.io** - WebSocket server
-- **Multer** - File upload handling
 
 ## 📦 Project Structure
 
 ```
 chatPDF/
-├── frontend/          # Next.js frontend application
+├── frontend/              # Next.js frontend application
 │   ├── src/
-│   │   ├── components/    # React components
+│   │   ├── app/          # Next.js App Router pages
+│   │   ├── components/   # React components
+│   │   ├── hooks/        # Custom React hooks
 │   │   ├── lib/          # Utility functions and configurations
-│   │   ├── services/     # API client services
-│   │   └── types/        # TypeScript type definitions
-│   ├── public/           # Static assets
+│   │   └── services/     # API client services
+│   ├── prisma/           # Frontend Prisma schema (for auth)
 │   └── package.json
-├── backend/           # Express.js backend API
+├── backend/               # Express.js backend API
 │   ├── routes/           # API route handlers
 │   ├── services/         # Business logic services
-│   ├── middleware/       # Express middleware
-│   ├── prisma/          # Database schema and migrations
-│   ├── uploads/         # PDF file storage
+│   ├── workers/          # Background job workers
+│   ├── queues/           # BullMQ queue definitions
+│   ├── prisma/           # Backend Prisma schema
 │   └── package.json
+├── docker-compose.local.yml      # Local development Docker config
+├── docker-compose.production.yml # Production Docker config
+├── nginx.conf                    # Production Nginx configuration
 └── README.md
 ```
 
@@ -56,141 +62,221 @@ chatPDF/
 
 ### Prerequisites
 
-- Node.js 18+ 
-- PostgreSQL database
-- OpenAI API key
-- Pinecone account and API key
-- Google OAuth credentials (optional)
-- GitHub OAuth credentials (optional)
+- **Docker Desktop** (recommended) OR Node.js 18+
+- **OpenAI API key** - [Get one here](https://platform.openai.com/api-keys)
+- **Pinecone account** - [Sign up here](https://www.pinecone.io/)
+- **Google OAuth credentials** (optional) - [Google Cloud Console](https://console.cloud.google.com/)
+- **GitHub OAuth credentials** (optional) - [GitHub Developer Settings](https://github.com/settings/developers)
 
-### Installation
+---
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/aniket1010/ChatPDF.git
-   cd chatPDF
-   ```
+## 🐳 Quick Start with Docker (Recommended)
 
-2. **Install backend dependencies**
-   ```bash
-   cd backend
-   npm install
-   ```
+### 1. Clone the repository
+```bash
+git clone https://github.com/aniket1010/ChatPDF.git
+cd chatPDF
+```
 
-3. **Install frontend dependencies**
-   ```bash
-   cd ../frontend
-   npm install
-   ```
+### 2. Create environment file
+Create a `.env` file in the root directory:
 
-4. **Set up environment variables**
+```env
+# ============================================
+# DATABASE CONFIGURATION
+# ============================================
+POSTGRES_USER=chatpdf_user
+POSTGRES_PASSWORD=your_secure_password_here
+POSTGRES_DB=chatpdf_local
 
-   **Backend** (`backend/.env`):
-   ```env
-   # Database
-   DATABASE_URL="postgresql://username:password@localhost:5432/chatpdf_db"
-   
-   # OpenAI
-   OPENAI_API_KEY=your_openai_api_key
-   
-   # Pinecone
-   PINECONE_API_KEY=your_pinecone_api_key
-   PINECONE_ENVIRONMENT=your_pinecone_environment
-   PINECONE_INDEX_NAME=your_pinecone_index
-   
-   # NextAuth (for token verification)
-   NEXTAUTH_SECRET=your_nextauth_secret
-   NEXTAUTH_URL=http://localhost:3000
-   
-   # OAuth (for user creation)
-   GOOGLE_CLIENT_ID=your_google_client_id
-   GOOGLE_CLIENT_SECRET=your_google_client_secret
-   GITHUB_CLIENT_ID=your_github_client_id
-   GITHUB_CLIENT_SECRET=your_github_client_secret
-   
-   # Server
-   PORT=5000
-   HOST=0.0.0.0
-   ```
+# ============================================
+# REDIS CONFIGURATION
+# ============================================
+REDIS_PASSWORD=your_redis_password_here
 
-   **Frontend** (`frontend/.env.local`):
-   ```env
-   # NextAuth
-   NEXTAUTH_SECRET=your_nextauth_secret
-   NEXTAUTH_URL=http://localhost:3000
-   
-   # OAuth
-   GOOGLE_CLIENT_ID=your_google_client_id
-   GOOGLE_CLIENT_SECRET=your_google_client_secret
-   GITHUB_CLIENT_ID=your_github_client_id
-   GITHUB_CLIENT_SECRET=your_github_client_secret
-   
-   # API
-   NEXT_PUBLIC_API_BASE=http://localhost:5000
-   ```
+# ============================================
+# OPENAI CONFIGURATION (REQUIRED)
+# ============================================
+OPENAI_API_KEY=sk-your-openai-api-key
 
-5. **Set up the database**
-   ```bash
-   cd backend
-   npx prisma migrate dev
-   npx prisma generate
-   ```
+# ============================================
+# PINECONE CONFIGURATION (REQUIRED)
+# ============================================
+PINECONE_API_KEY=your-pinecone-api-key
+PINECONE_INDEX_NAME=chatpdf-local
 
-6. **Start the development servers**
+# ============================================
+# AUTHENTICATION
+# ============================================
+BETTER_AUTH_SECRET=your-secret-key-at-least-32-characters-long
+NEXTAUTH_URL=http://localhost:3000
 
-   **Backend** (Terminal 1):
-   ```bash
-   cd backend
-   npm run dev
-   ```
+# ============================================
+# APPLICATION URLs
+# ============================================
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_BASE=http://localhost:5000
 
-   **Frontend** (Terminal 2):
-   ```bash
-   cd frontend
-   npm run dev
-   ```
+# ============================================
+# OAUTH PROVIDERS (OPTIONAL)
+# ============================================
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
 
-7. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
+# ============================================
+# EMAIL CONFIGURATION (OPTIONAL - for email verification)
+# ============================================
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+MAIL_FROM=your-email@gmail.com
+```
 
-## 🔧 Development Scripts
+### 3. Create Pinecone Index
+Before starting the app, create a Pinecone index:
+1. Go to [Pinecone Console](https://app.pinecone.io/)
+2. Create a new index with:
+   - **Name**: `chatpdf-local` (or whatever you set in `PINECONE_INDEX_NAME`)
+   - **Dimensions**: `1536`
+   - **Metric**: `cosine`
+   - **Spec**: Serverless (AWS, us-east-1)
 
-### Frontend
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
+### 4. Start the application
+```bash
+docker-compose -f docker-compose.local.yml up -d
+```
 
-### Backend
-- `npm run dev` - Start development server with nodemon
+### 5. Run database migrations
+```bash
+docker exec chatpdf-frontend npx prisma migrate deploy
+```
 
-## 🔐 Authentication
+### 6. Access the application
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
 
-The application supports multiple authentication methods:
+---
 
-- **Google OAuth** - Sign in with Google account
-- **GitHub OAuth** - Sign in with GitHub account
+## 💻 Manual Setup (Without Docker)
 
-User sessions are managed using NextAuth.js with JWT tokens.
+### 1. Install dependencies
+```bash
+# Backend
+cd backend
+npm install
+
+# Frontend
+cd ../frontend
+npm install
+```
+
+### 2. Set up PostgreSQL and Redis
+Install and start PostgreSQL and Redis locally, then update your `.env` files accordingly.
+
+### 3. Run database migrations
+```bash
+# Backend
+cd backend
+npx prisma migrate dev
+
+# Frontend
+cd ../frontend
+npx prisma migrate dev
+```
+
+### 4. Start the servers
+```bash
+# Terminal 1 - Backend
+cd backend
+npm run dev
+
+# Terminal 2 - Worker
+cd backend
+npm run worker
+
+# Terminal 3 - Frontend
+cd frontend
+npm run dev
+```
+
+---
+
+## 🔧 Docker Commands
+
+```bash
+# Start all services
+docker-compose -f docker-compose.local.yml up -d
+
+# View logs
+docker-compose -f docker-compose.local.yml logs -f
+
+# Stop all services
+docker-compose -f docker-compose.local.yml down
+
+# Rebuild after code changes
+docker-compose -f docker-compose.local.yml up -d --build
+
+# View specific service logs
+docker logs chatpdf-frontend
+docker logs chatpdf-backend
+docker logs chatpdf-worker
+```
+
+---
+
+## 🔐 Setting Up OAuth
+
+### Google OAuth
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable Google+ API
+4. Go to **Credentials** → **Create Credentials** → **OAuth Client ID**
+5. Set **Authorized redirect URI**: `http://localhost:3000/api/auth/callback/google`
+6. Copy Client ID and Secret to your `.env`
+
+### GitHub OAuth
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click **OAuth Apps** → **New OAuth App**
+3. Set **Authorization callback URL**: `http://localhost:3000/api/auth/callback/github`
+4. Copy Client ID and generate Client Secret to your `.env`
+
+---
 
 ## 📄 API Endpoints
 
 ### Upload
-- `POST /api/upload` - Upload PDF file
+- `POST /upload` - Upload PDF file
 
 ### Chat
-- `POST /api/chat` - Send chat message
-- `WebSocket /socket.io` - Real-time chat
+- `POST /chat` - Send chat message
+- `WebSocket /socket.io` - Real-time chat updates
 
 ### Conversations
-- `GET /api/conversations` - Get user conversations
-- `GET /api/conversations/:id` - Get specific conversation
-- `DELETE /api/conversations/:id` - Delete conversation
+- `GET /conversation` - Get user conversations
+- `GET /conversation/:id` - Get specific conversation
+- `DELETE /conversation/:id` - Delete conversation
+- `PUT /conversation/:id/rename` - Rename conversation
 
 ### User
-- `GET /api/user/profile` - Get user profile
-- `PUT /api/user/profile` - Update user profile
+- `GET /user/profile` - Get user profile
+- `PUT /user/profile` - Update user profile
+
+---
+
+## 🚀 Production Deployment
+
+For production deployment on AWS EC2:
+
+1. Use `docker-compose.production.yml`
+2. Set up proper domain and SSL certificates
+3. Configure `nginx.conf` for your domain
+4. Update OAuth redirect URLs to your production domain
+5. Use strong, unique passwords for all services
+
+---
 
 ## 🤝 Contributing
 
@@ -200,16 +286,13 @@ User sessions are managed using NextAuth.js with JWT tokens.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+---
+
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- OpenAI for GPT integration
-- Pinecone for vector search capabilities
-- Next.js team for the amazing framework
-- All open source contributors
+---
 
 ## 📞 Support
 
